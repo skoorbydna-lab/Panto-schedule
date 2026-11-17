@@ -27,6 +27,10 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .btn.primary{background:var(--gold);border-color:var(--gold);color:#2a1a05}
 .btn.small{padding:5px 9px;font-size:12px}
 .btn.ghost{background:none}
+.mine{background:#fff4d6;border:1px solid var(--gold);border-radius:8px;padding:7px 10px;font-weight:600;margin:2px 0 6px}
+.mine.off{background:#e5f2ea;border-color:#bfe0cb;color:var(--ok)}
+.sc.me .n b{color:var(--plum)}.sc.me{background:#fffaf0}
+.sc.notme{opacity:.5}
 .btn.wa{background:#25d366;border-color:#25d366;color:#fff;text-decoration:none;display:inline-block}
 .cov{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 12px}
 .cov span{font-size:11.5px;padding:3px 8px;border-radius:999px;background:#e5f2ea;color:var(--ok);font-weight:600}
@@ -219,6 +223,9 @@ const FIREBASE_CONFIG = null;   // e.g. { apiKey: "...", authDomain: "...", proj
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
 const KEY = 'pib-rehearsal-v2';
+let me = '', onlyMine = false;
+try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
+function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
 let live = false, canEdit = true, docRef = null, docExists = false;
 let state, tab = 'schedule', openPanel = null;
 function load(){ try{ const s = localStorage.getItem(KEY); if(s) return JSON.parse(s);}catch(e){} return null; }
@@ -324,9 +331,17 @@ function renderSchedule(){
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
   if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input type="time" id="x-start" value="'+state.settings.startTime+'"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
   if (live && !docExists) h += '<p class="note">The schedule hasn\'t been published yet.</p>';
-  h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
+  const people = allActors(state); if (me && !people.includes(me)) me = '';
+  h += '<div class="card mebar"><div class="cb" style="padding-top:10px"><div class="bar" style="margin:0"><b>Me:</b><select id="me-sel"><option value="">Everyone</option>' + people.map(a => '<option'+(a===me?' selected':'')+'>'+esc(a)+'</option>').join('') + '</select>' + (me ? '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="me-only"'+(onlyMine?' checked':'')+' style="width:20px;height:20px"> Only show when I\'m needed</label>' : '') + '</div>';
+  if (me) { const mine = state.nights.filter(n => n.type !== 'cancelled' && nightInfo(n).called.includes(me) && !n.away.includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+state.nights.filter(n=>n.type!=='cancelled').length+' nights.</p>'; }
+  h += '</div></div>';
+  if (!(me && onlyMine)) h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
+  let shown = 0;
   state.nights.forEach((n, i) => {
     const info = nightInfo(n), past = n.date < today;
+    const needed = me && info.called.includes(me);
+    if (me && onlyMine && (!needed || n.type === 'cancelled')) return;
+    shown++;
     const tagCls = n.type==='run' ? 'run' : n.type==='cancelled' ? 'off' : '';
     const tagTxt = n.type==='run' ? 'Full run' : n.type==='cancelled' ? 'Cancelled' : n.extra ? 'Extra' : 'Rehearsal';
     const weeksTo = Math.round((new Date(state.settings.opening) - new Date(n.date))/(7*864e5));
@@ -334,10 +349,11 @@ function renderSchedule(){
     h += '<span class="tag '+tagCls+'">'+tagTxt+'</span>';
     if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
+    if (me && n.type !== 'cancelled') h += needed ? '<div class="mine">⭐ '+esc(me)+(n.away.includes(me) ? ' – marked away' : ' – arrive '+(n.type==='run' ? (n.start||state.settings.startTime) : info.calls[me]))+'</div>' : '<div class="mine off">'+esc(me)+' – night off</div>';
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">No scenes yet.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
+        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
       const pct = Math.min(100, info.mins / info.cap * 100);
       h += '<div class="meter'+(info.mins>info.cap?' over':'')+'"><i style="width:'+pct+'%"></i></div><div class="meta"><span>'+info.mins+' of '+info.cap+' min</span><span>'+(info.items.length? 'finish ≈ '+info.end : '')+'</span></div>';
@@ -363,6 +379,7 @@ function renderSchedule(){
     }
     h += '<div class="foot">'+(canEdit?'<button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button>':'')+'<a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div></div>';
   });
+  if (me && onlyMine && !shown) h += '<p class="note">No rehearsals for '+esc(me)+' yet.</p>';
   return h;
 }
 function renderPeople(){
@@ -453,6 +470,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, d = el.dataset;
+  if (el.id === 'me-sel') { me = el.value; if (!me) onlyMine = false; saveMe(); render(); return; }
+  if (el.id === 'me-only') { onlyMine = el.checked; saveMe(); render(); return; }
   if (!canEdit) return;
   if (d.type) { const n = state.nights[+d.type]; n.type = el.value; if (n.type!=='rehearsal') n.scenes = []; save(); render(); toast('Re-plan to rebalance the other nights'); }
   else if (d.add) { if (el.value) { const n = state.nights[+d.add]; n.scenes.push(el.value); const order = state.scenes.map(s=>s.id); n.scenes.sort((a,b)=>order.indexOf(a)-order.indexOf(b)); n.locked = true; save(); render(); } }
