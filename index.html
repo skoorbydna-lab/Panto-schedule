@@ -6,6 +6,9 @@
 <title>Puss in Boots – Rehearsal Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{--plum:#4a1530;--red:#8c1c2b;--gold:#d9a441;--cream:#fbf6ee;--card:#fff;--ink:#2a2026;--muted:#7a6a72;--line:#eadfd6;--ok:#2f7d4f;--warn:#b5651d;--bad:#b3261e;--chip:#f3ebe2}
 *{box-sizing:border-box}
@@ -210,10 +213,44 @@ function plan(state, opts = {}) {
   return { nights: result, cost: bestC };
 }
 // ---------- app ----------
+// ===== LIVE SETTINGS – paste your Firebase details here =====
+const FIREBASE_CONFIG = null;   // e.g. { apiKey: "...", authDomain: "...", projectId: "...", appId: "..." }
+const DIRECTOR_EMAIL = '';      // the director's sign-in email
+// =============================================================
 const KEY = 'pib-rehearsal-v2';
+let live = false, canEdit = true, docRef = null, docExists = false;
 let state, tab = 'schedule', openPanel = null;
 function load(){ try{ const s = localStorage.getItem(KEY); if(s) return JSON.parse(s);}catch(e){} return null; }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  if (live && canEdit) {
+    clearTimeout(save.t);
+    save.t = setTimeout(() => docRef.set({ data: JSON.stringify(state), updated: firebase.firestore.FieldValue.serverTimestamp() })
+      .then(() => { docExists = true; }).catch(e => toast('Not saved – ' + (e.code || e.message))), 400);
+  }
+}
+function initLive(){
+  if (!FIREBASE_CONFIG || typeof firebase === 'undefined') return false;
+  firebase.initializeApp(FIREBASE_CONFIG);
+  docRef = firebase.firestore().collection('panto').doc('schedule');
+  live = true; canEdit = false;
+  firebase.auth().onAuthStateChanged(u => {
+    canEdit = !!u;
+    if (canEdit && !docExists) { state = state || defaultState(); replan(); } else render();
+  });
+  docRef.onSnapshot(snap => {
+    if (snap.metadata.hasPendingWrites) return;
+    docExists = snap.exists;
+    if (snap.exists) { try { state = JSON.parse(snap.data().data); localStorage.setItem(KEY, snap.data().data); } catch(e){} }
+    if (!(canEdit && openPanel !== null)) render();
+  }, () => toast('Offline – showing last saved copy'));
+  return true;
+}
+async function signIn(){
+  const pw = $('#pw').value, err = $('#pw-err');
+  try { await firebase.auth().signInWithEmailAndPassword(DIRECTOR_EMAIL, pw); tab = 'schedule'; toast('Signed in – you can edit'); }
+  catch(e){ err.style.display = 'block'; err.textContent = 'Wrong password, or no internet.'; }
+}
 const today = new Date().toISOString().slice(0,10);
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -282,7 +319,8 @@ function showModal(text){
 }
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
-  let h = '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>';
+  let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
+  if (live && !docExists) h += '<p class="note">The schedule hasn\'t been published yet.</p>';
   h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
   state.nights.forEach((n, i) => {
     const info = nightInfo(n), past = n.date < today;
@@ -291,12 +329,12 @@ function renderSchedule(){
     const weeksTo = Math.round((new Date(state.settings.opening) - new Date(n.date))/(7*864e5));
     h += '<div class="card'+(past?' past':'')+'"><div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div><div class="wk">'+weeksTo+' wk'+(weeksTo===1?'':'s')+' to opening</div></div>';
     h += '<span class="tag '+tagCls+'">'+tagTxt+'</span>';
-    if (n.type==='rehearsal') h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
+    if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">No scenes yet.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span><button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button></div>';
+        h += '<div class="sc"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
       const pct = Math.min(100, info.mins / state.settings.sessionMins * 100);
       h += '<div class="meter'+(info.mins>state.settings.sessionMins?' over':'')+'"><i style="width:'+pct+'%"></i></div><div class="meta"><span>'+info.mins+' of '+state.settings.sessionMins+' min</span><span>'+(info.items.length? 'finish ≈ '+info.end : '')+'</span></div>';
@@ -318,7 +356,7 @@ function renderSchedule(){
       h += '<label class="f">Note for the cast</label><input data-note="'+i+'" value="'+esc(n.note)+'" placeholder="e.g. bring scripts, Dipsy costume fitting" style="width:100%">';
       h += '</div>';
     }
-    h += '<div class="foot"><button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button><a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div></div>';
+    h += '<div class="foot">'+(canEdit?'<button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button>':'')+'<a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div></div>';
   });
   return h;
 }
@@ -347,7 +385,7 @@ function renderScenes(){
   let h = '<h2>Scenes</h2><p class="note">Rehearsal minutes are estimates from the script length – adjust them and re-plan.</p>';
   state.scenes.forEach((s, i) => {
     const when = state.nights.filter(n => n.type==='rehearsal' && n.scenes.includes(s.id)).map(n => fmtDate(n.date));
-    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div><input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"> <span class="wk">min</span></div>';
+    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div><input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"'+(canEdit?'':' disabled')+'> <span class="wk">min</span></div>';
     h += '<div class="ppl">'+s.roles.map(r => { const a = (state.cast.find(c=>c.role===r)||{}).actor; return esc(r)+' <span style="color:var(--muted)">('+esc(a && a.trim() ? a : '?')+')</span>'; }).join(', ')+'</div>';
     h += '<div class="ppl"><b>Rehearsed '+cov[s.id]+'×:</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
   });
@@ -355,7 +393,9 @@ function renderScenes(){
 }
 function renderSetup(){
   const st = state.settings;
-  let h = '<h2>Session</h2><div class="card"><div class="cb" style="padding-top:6px">';
+  if (live && !canEdit) return '<h2>Director sign-in</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">Everyone can view the schedule. Only the director can change it.</p><label class="f">Password</label><input type="password" id="pw" style="width:100%" autocomplete="current-password"><div class="bar" style="margin-top:10px"><button class="btn primary" id="pw-go">Sign in</button></div><div class="warn" id="pw-err" style="display:none"></div></div></div>';
+  let top = live ? '<div class="card"><div class="cb" style="padding-top:10px;display:flex;align-items:center;gap:8px"><span style="flex:1">✅ Signed in as director – changes go live for everyone.</span><button class="btn small" id="pw-out">Sign out</button></div></div>' : '';
+  let h = top + '<h2>Session</h2><div class="card"><div class="cb" style="padding-top:6px">';
   h += '<label class="f">Start time</label><input type="time" id="s-start" value="'+st.startTime+'">';
   h += '<label class="f">Session length (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
   h += '<label class="f">Rehearse each scene at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
@@ -368,6 +408,8 @@ function renderSetup(){
 }
 function render(){
   $('#count').textContent = 'Opening night: ' + fmtDate(state.settings.opening, true) + ' · ' + Math.max(0, Math.ceil((new Date(state.settings.opening) - new Date(today))/864e5)) + ' days to go';
+  const setupBtn = document.querySelector('nav button[data-t="setup"]'); if (setupBtn) setupBtn.textContent = (live && !canEdit) ? 'Director' : 'Setup';
+  if (live) $('#count').textContent += canEdit ? ' · ✏️ Editing' : ' · 🔴 Live';
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
   $('#main').innerHTML = tab==='schedule' ? renderSchedule() : tab==='people' ? renderPeople() : tab==='scenes' ? renderScenes() : renderSetup();
 }
@@ -375,6 +417,9 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
   if (d.t) { tab = d.t; render(); return; }
+  if (b.id === 'pw-go') return signIn();
+  if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
+  if (!canEdit && !d.wa) return;
   if (b.id === 'replan') return replan();
   if (d.lock) { const n = state.nights[+d.lock]; n.locked = !n.locked; save(); render(); return; }
   if (d.edit) { openPanel = openPanel === +d.edit ? null : +d.edit; render(); return; }
@@ -401,6 +446,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const el = e.target, d = el.dataset;
+  if (!canEdit) return;
   if (d.type) { const n = state.nights[+d.type]; n.type = el.value; if (n.type!=='rehearsal') n.scenes = []; save(); render(); toast('Re-plan to rebalance the other nights'); }
   else if (d.add) { if (el.value) { const n = state.nights[+d.add]; n.scenes.push(el.value); const order = state.scenes.map(s=>s.id); n.scenes.sort((a,b)=>order.indexOf(a)-order.indexOf(b)); n.locked = true; save(); render(); } }
   else if (d.note !== undefined) { state.nights[+d.note].note = el.value; save(); render(); }
@@ -411,6 +457,8 @@ document.addEventListener('change', e => {
   else if (el.id === 's-reps') { state.settings.minReps = +el.value; save(); toast('Re-plan to apply'); }
 });
 state = load();
-if (!state) { state = defaultState(); replan(); } else render();
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pw') signIn(); });
+if (initLive()) { if (!state) state = defaultState(); render(); }
+else if (!state) { state = defaultState(); replan(); } else render();
 </script>
 </body></html>
