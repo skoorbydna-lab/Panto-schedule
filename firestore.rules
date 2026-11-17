@@ -6,5 +6,12 @@ service cloud.firestore {
       allow write: if request.auth != null
                    && request.auth.token.email == 'director@peaklandplayers.panto';  // only the director
     }
+    match /panto_away/{name} {
+      allow read: if true;   // cast say when they can't make it
+      allow write: if request.auth != null
+                   && request.resource.data.keys().hasOnly(['name', 'dates', 'updated'])
+                   && request.resource.data.dates is list
+                   && request.resource.data.dates.size() < 100;
+    }
   }
 }

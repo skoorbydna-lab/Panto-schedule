@@ -28,6 +28,8 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .btn.small{padding:5px 9px;font-size:12px}
 .btn.ghost{background:none}
 .mine{background:#fff4d6;border:1px solid var(--gold);border-radius:8px;padding:7px 10px;font-weight:600;margin:2px 0 6px}
+.mine{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.mine.away{background:#fdecea;border-color:#f3b8b3;color:var(--bad)}
 .mine.off{background:#e5f2ea;border-color:#bfe0cb;color:var(--ok)}
 .sc.me .n b{color:var(--plum)}.sc.me{background:#fffaf0}
 .sc.notme{opacity:.5}
@@ -233,6 +235,21 @@ const KEY = 'pib-rehearsal-v2';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
+let castAway = {};   // { name: [dates] } – absences the cast enter themselves
+const awayKey = name => name.replace(/[^A-Za-z0-9]/g, '_');
+function effAway(n){ const s = new Set(n.away); Object.entries(castAway).forEach(([name, dates]) => { if (dates.includes(n.date)) s.add(name); }); return [...s]; }
+function castSaid(n, a){ return (castAway[a] || []).includes(n.date); }
+async function setCastAway(name, date, away){
+  const list = new Set(castAway[name] || []); away ? list.add(date) : list.delete(date);
+  castAway[name] = [...list].sort(); render();
+  if (!live) { try { localStorage.setItem('pib-castaway', JSON.stringify(castAway)); } catch(e){} return; }
+  try {
+    if (!firebase.auth().currentUser) await firebase.auth().signInAnonymously();
+    await firebase.firestore().collection('panto_away').doc(awayKey(name)).set({ name, dates: castAway[name], updated: firebase.firestore.FieldValue.serverTimestamp() });
+    toast(away ? 'Thanks – the director can see you can\'t make it' : 'Marked as available');
+  } catch(e){ toast('Not saved – check your internet'); }
+}
+try { castAway = JSON.parse(localStorage.getItem('pib-castaway') || '{}'); } catch(e){}
 let live = false, canEdit = true, docRef = null, docExists = false;
 let state, tab = 'schedule', openPanel = null;
 function load(){ try{ const s = localStorage.getItem(KEY); if(s) return JSON.parse(s);}catch(e){} return null; }
@@ -250,9 +267,13 @@ function initLive(){
   docRef = firebase.firestore().collection('panto').doc('schedule');
   live = true; canEdit = false;
   firebase.auth().onAuthStateChanged(u => {
-    canEdit = !!u;
+    canEdit = !!u && !u.isAnonymous;
     if (canEdit && !docExists) { state = state || defaultState(); replan(); } else render();
   });
+  firebase.firestore().collection('panto_away').onSnapshot(qs => {
+    const m = {}; qs.forEach(d => { const x = d.data(); if (x.name && Array.isArray(x.dates)) m[x.name] = x.dates; });
+    castAway = m; if (!(canEdit && openPanel !== null)) render();
+  }, () => {});
   docRef.onSnapshot(snap => {
     if (snap.metadata.hasPendingWrites) return;
     docExists = snap.exists;
@@ -278,7 +299,7 @@ function nightInfo(n){
   const everyone = allActors(state);
   if (n.type === 'cancelled') return { called: [], off: everyone, items: [], mins: 0, issues: [] };
   if (n.type === 'run') {
-    const away = everyone.filter(a => n.away.includes(a));
+    const away = everyone.filter(a => effAway(n).includes(a));
     return { called: everyone, off: [], items: [], mins: n.mins || state.settings.sessionMins, issues: away.length ? [away.join(', ')+' away for the run'] : [], calls:{} };
   }
   const start = n.start || state.settings.startTime, cap = n.mins || state.settings.sessionMins;
@@ -288,7 +309,7 @@ function nightInfo(n){
     const actors = actorsFor(state, s);
     items.push({ s, time: t, actors });
     actors.forEach(a => { if(!(a in calls)) { calls[a] = t; called.push(a); } });
-    const missing = actors.filter(a => n.away.includes(a));
+    const missing = actors.filter(a => effAway(n).includes(a));
     if (missing.length) issues.push(missing.join(', ') + ' away but needed for ' + s.name);
     t = addMins(t, s.mins); mins += s.mins;
   });
@@ -303,7 +324,7 @@ function coverage(){
 }
 function replan(){
   state.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
-  const r = plan(state);
+  const r = plan({ ...state, nights: state.nights.map(n => ({ ...n, away: effAway(n) })) });
   r.nights.forEach((list, i) => { if (state.nights[i].type === 'rehearsal') state.nights[i].scenes = list; else state.nights[i].scenes = []; });
   save(); render(); toast('Schedule re-planned');
 }
@@ -340,7 +361,7 @@ function renderSchedule(){
   if (live && !docExists) h += '<p class="note">The schedule hasn\'t been published yet.</p>';
   const people = allActors(state); if (me && !people.includes(me)) me = '';
   h += '<div class="card mebar"><div class="cb" style="padding-top:10px"><div class="bar" style="margin:0"><b>Me:</b><select id="me-sel"><option value="">Everyone</option>' + people.map(a => '<option'+(a===me?' selected':'')+'>'+esc(a)+'</option>').join('') + '</select>' + (me ? '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="me-only"'+(onlyMine?' checked':'')+' style="width:20px;height:20px"> Only show when I\'m needed</label>' : '') + '</div>';
-  if (me) { const mine = state.nights.filter(n => n.type !== 'cancelled' && nightInfo(n).called.includes(me) && !n.away.includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+state.nights.filter(n=>n.type!=='cancelled').length+' nights.</p>'; }
+  if (me) { const mine = state.nights.filter(n => n.type !== 'cancelled' && nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+state.nights.filter(n=>n.type!=='cancelled').length+' nights.</p>'; }
   h += '</div></div>';
   if (!(me && onlyMine)) h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
   let shown = 0;
@@ -356,7 +377,12 @@ function renderSchedule(){
     h += '<span class="tag '+tagCls+'">'+tagTxt+'</span>';
     if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
-    if (me && n.type !== 'cancelled') h += needed ? '<div class="mine">⭐ '+esc(me)+(n.away.includes(me) ? ' – marked away' : ' – arrive '+(n.type==='run' ? (n.start||state.settings.startTime) : info.calls[me]))+'</div>' : '<div class="mine off">'+esc(me)+' – night off</div>';
+    if (me && n.type !== 'cancelled') {
+      const iAmAway = effAway(n).includes(me);
+      h += '<div class="mine'+(iAmAway?' away':needed?'':' off')+'"><span>'+(iAmAway ? '✕ '+esc(me)+' – can\'t make it' : needed ? '⭐ '+esc(me)+' – arrive '+(n.type==='run' ? (n.start||state.settings.startTime) : info.calls[me]) : esc(me)+' – night off')+'</span>';
+      if (!past && (!iAmAway || castSaid(n, me))) h += '<button class="btn small" data-cant="'+i+'">'+(iAmAway ? 'I can make it now' : 'Can\'t make it')+'</button>';
+      h += '</div>';
+    }
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">No scenes yet.</p>';
       info.items.forEach((it, k) => {
@@ -369,13 +395,13 @@ function renderSchedule(){
       h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+(info.called.map(a => esc(a) + (info.calls && info.calls[a] && info.calls[a]!==info.start ? ' <span style="color:var(--muted)">'+info.calls[a]+'</span>' : '')).join(', ') || '—')+'</div>';
       if (info.off.length) h += '<div class="ppl"><b class="off">Night off:</b> '+esc(info.off.join(', '))+'</div>';
     }
-    if (n.away.length) h += '<div class="ppl"><b style="color:var(--bad)">Away:</b> '+esc(n.away.join(', '))+'</div>';
+    const aw = effAway(n); if (aw.length) h += '<div class="ppl"><b style="color:var(--bad)">Away:</b> '+esc(aw.join(', '))+'</div>';
     if (n.note) h += '<div class="ppl"><b>Note:</b> '+esc(n.note)+'</div>';
     info.issues.forEach(x => h += '<div class="warn">⚠ '+esc(x)+'</div>');
     h += '</div>';
     if (openPanel === i) {
       h += '<div class="panel"><label class="f">Night type</label><select data-type="'+i+'"><option value="rehearsal"'+(n.type==='rehearsal'?' selected':'')+'>Rehearsal</option><option value="run"'+(n.type==='run'?' selected':'')+'>Full run</option><option value="cancelled"'+(n.type==='cancelled'?' selected':'')+'>Cancelled</option></select>';
-      h += '<label class="f">Who can\'t make it? (tap to mark away)</label><div class="chips">' + allActors(state).map(a => '<button data-away="'+i+'" data-a="'+esc(a)+'" class="'+(n.away.includes(a)?'away':'')+'">'+esc(a)+'</button>').join('') + '</div>';
+      h += '<label class="f">Who can\'t make it? (tap to mark away)</label><div class="chips">' + allActors(state).map(a => '<button data-away="'+i+'" data-a="'+esc(a)+'" class="'+(effAway(n).includes(a)?'away':'')+'">'+esc(a)+'</button>').join('') + '</div>';
       if (n.type==='rehearsal') {
         h += '<label class="f">Add a scene</label><select data-add="'+i+'"><option value="">Choose…</option>' + state.scenes.filter(s => !n.scenes.includes(s.id)).map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+s.mins+' min)</option>').join('') + '</select>';
       }
@@ -384,7 +410,8 @@ function renderSchedule(){
       if (n.extra) h += '<div class="bar" style="margin-top:10px"><button class="btn small" style="color:var(--bad)" data-del="'+i+'">Remove this date</button></div>';
       h += '</div>';
     }
-    h += '<div class="foot">'+(canEdit?'<button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button>':'')+'<a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div></div>';
+    if (canEdit) h += '<div class="foot"><button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button><a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div>';
+    h += '</div>';
   });
   if (me && onlyMine && !shown) h += '<p class="note">No rehearsals for '+esc(me)+' yet.</p>';
   return h;
@@ -398,7 +425,7 @@ function renderPeople(){
     let off = 0;
     h += '<tr><td><b>'+esc(p)+'</b><br><small style="color:var(--muted)">'+esc(state.cast.filter(c => c.actor.trim()===p).map(c => c.role).join(', '))+'</small></td>';
     nights.forEach((n, k) => {
-      const called = infos[k].called.includes(p), away = n.away.includes(p);
+      const called = infos[k].called.includes(p), away = effAway(n).includes(p);
       if (!called) off++;
       h += '<td class="c '+(away?'a':called?'y':'o')+'">'+(away?'✕':called?'●':'○')+'</td>';
     });
@@ -448,13 +475,14 @@ document.addEventListener('click', e => {
   if (d.t) { tab = d.t; render(); return; }
   if (b.id === 'pw-go') return signIn();
   if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
-  if (!canEdit && !d.wa) return;
+  if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
+  if (!canEdit) return;
   if (b.id === 'replan') return replan();
   if (d.lock) { const n = state.nights[+d.lock]; n.locked = !n.locked; save(); render(); return; }
   if (d.edit) { openPanel = openPanel === +d.edit ? null : +d.edit; render(); return; }
   if (d.wa) return copyText(whatsapp(state.nights[+d.wa]));
   if (d.rm) { const [i,k] = d.rm.split(':').map(Number); state.nights[i].scenes.splice(k,1); state.nights[i].locked = true; save(); render(); return; }
-  if (d.away) { const n = state.nights[+d.away]; const a = d.a; n.away = n.away.includes(a) ? n.away.filter(x => x!==a) : [...n.away, a]; save(); render(); return; }
+  if (d.away) { const n = state.nights[+d.away]; const a = d.a; if (effAway(n).includes(a)) { n.away = n.away.filter(x => x!==a); if (castSaid(n, a)) setCastAway(a, n.date, false); } else n.away = [...n.away, a]; save(); render(); return; }
   if (b.id === 'x-add') { const v = $('#x-date').value, st = $('#x-start').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); state.nights.push({date:v,type:'rehearsal',away:[],scenes:[],locked:false,note:'',extra:true,start:st&&st!==state.settings.startTime?st:undefined}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Extra rehearsal added and schedule re-planned'); return; }
   if (d.del) { const n = state.nights[+d.del]; state.nights.splice(+d.del,1); openPanel=null; replan(); toast(fmtDate(n.date)+' removed'); return; }
   if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
