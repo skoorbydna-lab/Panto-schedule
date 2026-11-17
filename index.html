@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puss in Boots – Rehearsal Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--plum:#4a1530;--red:#8c1c2b;--gold:#d9a441;--cream:#fbf6ee;--card:#fff;--ink:#2a2026;--muted:#7a6a72;--line:#eadfd6;--ok:#2f7d4f;--warn:#b5651d;--bad:#b3261e;--chip:#f3ebe2}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--cream);color:var(--ink);font-size:15px;line-height:1.4}
+header{background:linear-gradient(160deg,var(--plum),var(--red));color:#fff;padding:18px 16px 14px;position:relative;overflow:hidden}
+header:after{content:"";position:absolute;inset:auto 0 0 0;height:6px;background:repeating-linear-gradient(90deg,var(--gold) 0 14px,transparent 14px 22px);opacity:.8}
+header h1{font-family:Fraunces,serif;font-weight:800;margin:0;font-size:24px;letter-spacing:.2px}
+header .sub{opacity:.85;font-size:13px;margin-top:2px}
+header .count{margin-top:8px;display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:3px 10px;font-size:12px}
+nav{display:flex;gap:4px;padding:8px 10px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;overflow-x:auto}
+nav button{flex:1;border:0;background:none;padding:9px 10px;border-radius:10px;font:600 14px Inter;color:var(--muted);white-space:nowrap}
+nav button.on{background:var(--plum);color:#fff}
+main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;font:600 13px Inter;color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:#2a1a05}
+.btn.small{padding:5px 9px;font-size:12px}
+.btn.ghost{background:none}
+.btn.wa{background:#25d366;border-color:#25d366;color:#fff;text-decoration:none;display:inline-block}
+.cov{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 12px}
+.cov span{font-size:11.5px;padding:3px 8px;border-radius:999px;background:#e5f2ea;color:var(--ok);font-weight:600}
+.cov span.low{background:#fbeadd;color:var(--warn)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(74,21,48,.05)}
+.card.past{opacity:.6}
+.ch{display:flex;align-items:center;gap:8px;padding:12px 14px 6px}
+.date{font-family:Fraunces,serif;font-weight:600;font-size:18px}
+.wk{font-size:11.5px;color:var(--muted)}
+.tag{margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--chip);color:var(--plum);text-transform:uppercase;letter-spacing:.4px}
+.tag.run{background:var(--plum);color:#fff}.tag.off{background:#eee;color:#888}
+.lock{border:0;background:none;font-size:16px;cursor:pointer;padding:2px 4px;opacity:.35}.lock.on{opacity:1}
+.cb{padding:4px 14px 12px}
+.sc{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)}
+.sc:first-child{border-top:0}
+.sc .t{font-variant-numeric:tabular-nums;font-weight:600;color:var(--red);width:42px;font-size:13px}
+.sc .n{flex:1}.sc .n b{font-weight:600}.sc .n small{display:block;color:var(--muted);font-size:12px}
+.sc .x{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px}
+.meter{height:6px;background:var(--chip);border-radius:6px;margin:8px 0 4px;overflow:hidden}.meter i{display:block;height:100%;background:var(--gold)}
+.meter.over i{background:var(--bad)}
+.meta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+.ppl{font-size:13px;margin-top:8px}.ppl b{font-weight:600}
+.ppl .off{color:var(--ok)}
+.warn{background:#fdecea;color:var(--bad);border-radius:8px;padding:6px 9px;font-size:12.5px;margin-top:8px}
+.foot{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line);background:#fcfaf7}
+.panel{padding:10px 14px;border-top:1px solid var(--line);background:#fcfaf7;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font:500 13px Inter;cursor:pointer}
+.chips button.away{background:var(--bad);border-color:var(--bad);color:#fff;text-decoration:line-through}
+select,input,textarea{font:14px Inter;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:#fff;color:var(--ink)}
+label.f{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.grid{overflow-x:auto}
+.grid td.c{text-align:center;font-weight:700}
+.y{color:var(--plum)}.o{color:#c9bcc2}.a{color:var(--bad)}
+h2{font-family:Fraunces,serif;font-size:19px;margin:16px 0 8px;color:var(--plum)}
+p.note{color:var(--muted);font-size:13px;margin:4px 0 10px}
+.modal{position:fixed;inset:0;background:rgba(30,10,20,.5);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.modal .box{background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:16px}
+.modal textarea{width:100%;height:240px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;z-index:30}
+</style>
+</head>
+<body>
+<header>
+  <h1>Puss in Boots</h1>
+  <div class="sub">Peakland Players · Rehearsal planner</div>
+  <div class="count" id="count"></div>
+</header>
+<nav id="nav">
+  <button data-t="schedule" class="on">Schedule</button>
+  <button data-t="people">People</button>
+  <button data-t="scenes">Scenes</button>
+  <button data-t="setup">Setup</button>
+</nav>
+<main id="main"></main>
+<script>
+// Panto rehearsal planner – data + scheduling engine (shared by page and tests)
+const DEFAULT_CAST = [
+  { role: 'Hickory', actor: 'Andy' },
+  { role: 'Dickory', actor: 'Phil R' },
+  { role: 'Patty Cake', actor: 'Ro' },
+  { role: 'Jack', actor: 'Meri' },
+  { role: 'Puss', actor: 'Mary' },
+  { role: 'Fairy', actor: 'Debs' },
+  { role: 'Queen', actor: 'Mel' },
+  { role: 'Princess', actor: 'Beth' },
+  { role: 'Olaf', actor: 'Pete A' },
+  { role: 'Gunther', actor: 'Stu' },
+  { role: 'Dipsy', actor: 'Niki' },
+  { role: 'Royal Guard 1', actor: 'Phil B' },
+  { role: 'Royal Guard 2', actor: 'Phil B' },
+  { role: 'Ghost', actor: 'Ghost' }
+];
+const ALL_ROLES = DEFAULT_CAST.map(c => c.role);
+const DEFAULT_SCENES = [
+  { id: 'a1s1', name: 'Act 1 Prologue + Scene 1', place: 'Outside the mill', mins: 80, roles: ['Patty Cake','Dipsy','Hickory','Dickory','Jack','Puss','Fairy','Olaf','Gunther'] },
+  { id: 'a1s2', name: 'Act 1 Scene 2', place: 'The palace', mins: 20, roles: ['Queen','Princess','Royal Guard 1','Puss'] },
+  { id: 'a1s3', name: 'Act 1 Scene 3', place: 'The windmill', mins: 30, roles: ['Hickory','Dickory','Dipsy','Olaf','Gunther','Fairy'] },
+  { id: 'a1s4', name: 'Act 1 Scene 4', place: 'The picnic', mins: 60, roles: ['Patty Cake','Jack','Puss','Hickory','Dickory','Dipsy','Queen','Princess','Royal Guard 1','Royal Guard 2'] },
+  { id: 'a1s5', name: 'Act 1 Scene 5', place: 'The glade', mins: 25, roles: ['Jack','Princess','Hickory','Dickory','Olaf','Queen','Patty Cake'] },
+  { id: 'a2s1', name: 'Act 2 Scene 1', place: 'The castle door', mins: 35, roles: ['Jack','Patty Cake','Hickory','Dickory','Queen','Dipsy','Ghost'] },
+  { id: 'a2s2', name: 'Act 2 Scene 2', place: 'Front of tabs', mins: 15, roles: ['Hickory','Dickory','Olaf','Gunther'] },
+  { id: 'a2s3', name: 'Act 2 Scene 3', place: 'Inside the castle', mins: 45, roles: ['Princess','Fairy','Olaf','Hickory','Dickory','Patty Cake','Queen','Jack','Puss','Dipsy'] },
+  { id: 'a2s4', name: 'Act 2 Scene 4', place: 'Front of tabs', mins: 15, roles: ['Hickory','Dickory'] },
+  { id: 'a2s5', name: 'Act 2 Scene 5 + Finale', place: 'Wedding & walkdown', mins: 30, roles: ALL_ROLES.filter(r => r !== 'Ghost') }
+];
+function mondays(startISO, endISO) {
+  const out = []; let d = new Date(startISO + 'T12:00:00Z'); const end = new Date(endISO + 'T12:00:00Z');
+  while (d < end) { out.push(d.toISOString().slice(0, 10)); d = new Date(d.getTime() + 7 * 864e5); }
+  return out;
+}
+function defaultState() {
+  const dates = mondays('2026-11-23', '2027-01-29');
+  return {
+    v: 1,
+    settings: { sessionMins: 120, startTime: '19:30', minReps: 2, opening: '2027-01-29' },
+    cast: DEFAULT_CAST.map(c => ({ ...c })),
+    scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
+    nights: dates.map(date => ({
+      date,
+      type: (date === '2027-01-18' || date === '2027-01-25') ? 'run' : 'rehearsal',
+      away: [], scenes: [], locked: false, note: ''
+    }))
+  };
+}
+function actorsFor(state, scene) {
+  const map = Object.fromEntries(state.cast.map(c => [c.role, c.actor.trim()]));
+  const set = new Set();
+  scene.roles.forEach(r => { if (map[r]) set.add(map[r]); });
+  return [...set];
+}
+function allActors(state) { return [...new Set(state.cast.map(c => c.actor.trim()).filter(Boolean))]; }
+
+// Seeded RNG so a re-plan is repeatable
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+// Plan: keeps locked nights, fills every other rehearsal night.
+function plan(state, opts = {}) {
+  const S = state.scenes, N = state.nights, cap = state.settings.sessionMins, R = state.settings.minReps;
+  const sceneActors = S.map(s => actorsFor(state, s));
+  const sceneIdx = Object.fromEntries(S.map((s, i) => [s.id, i]));
+  const free = []; // night indexes the planner may fill
+  N.forEach((n, i) => { if (n.type === 'rehearsal' && !n.locked) free.push(i); });
+  // fixed (locked) occurrences
+  const fixed = N.map((n, i) => (n.type === 'rehearsal' && n.locked) ? n.scenes.filter(id => id in sceneIdx).map(id => sceneIdx[id]) : []);
+  const slots = [];
+  S.forEach((s, si) => {
+    const have = fixed.reduce((a, l) => a + l.filter(x => x === si).length, 0);
+    for (let k = have; k < R; k++) slots.push(si);
+  });
+  if (!free.length || !slots.length) return { nights: N.map(n => n.scenes.slice()), cost: 0, issues: [] };
+  const away = N.map(n => new Set(n.away));
+  const W = { called: 3, missing: 60, over: 20, dup: 1000, gap: 15, early: 0.5, inv: 12, empty: 40, load: 0.04 };
+
+  function cost(assign) {
+    const per = N.map((_, i) => fixed[i].slice());
+    assign.forEach((ni, k) => per[ni].push(slots[k]));
+    let c = 0;
+    const occ = S.map(() => []);
+    per.forEach((list, ni) => {
+      if (N[ni].type !== 'rehearsal') return;
+      const seen = new Set(); let mins = 0; const called = new Set();
+      list.forEach(si => {
+        if (seen.has(si)) c += W.dup; seen.add(si);
+        mins += S[si].mins; occ[si].push(ni);
+        sceneActors[si].forEach(a => { called.add(a); if (away[ni].has(a)) c += W.missing; });
+      });
+      if (mins > cap) c += W.over * (mins - cap);
+      if (!list.length) c += W.empty;
+      c += W.called * called.size + W.load * mins * mins / cap;
+    });
+    const first = occ.map(l => l.length ? Math.min(...l) : 99);
+    for (let i = 0; i < first.length; i++) for (let j = i + 1; j < first.length; j++) if (first[j] < first[i]) c += W.inv;
+    occ.forEach((list, si) => {
+      list.sort((a, b) => a - b);
+      if (list.length) c += W.early * list[0];
+      for (let j = 1; j < list.length; j++) if (list[j] - list[j - 1] < 2) c += W.gap * (2 - (list[j] - list[j - 1]));
+    });
+    return c;
+  }
+  let best = null, bestC = Infinity;
+  const restarts = opts.restarts || 6, iters = opts.iters || 25000;
+  for (let r = 0; r < restarts; r++) {
+    const rand = rng(1234 + r * 7919);
+    let cur = slots.map(() => free[Math.floor(rand() * free.length)]);
+    let cc = cost(cur);
+    let T = 40;
+    for (let it = 0; it < iters; it++) {
+      const next = cur.slice();
+      if (rand() < 0.7) next[Math.floor(rand() * next.length)] = free[Math.floor(rand() * free.length)];
+      else { const a = Math.floor(rand() * next.length), b = Math.floor(rand() * next.length); [next[a], next[b]] = [next[b], next[a]]; }
+      const nc = cost(next);
+      if (nc <= cc || rand() < Math.exp((cc - nc) / T)) { cur = next; cc = nc; }
+      T = Math.max(0.05, T * 0.9996);
+      if (cc < bestC) { bestC = cc; best = cur.slice(); }
+    }
+  }
+  const result = N.map((n, i) => (n.type === 'rehearsal' && n.locked) ? n.scenes.slice() : []);
+  best.forEach((ni, k) => result[ni].push(S[slots[k]].id));
+  result.forEach(list => list.sort((a, b) => sceneIdx[a] - sceneIdx[b]));
+  return { nights: result, cost: bestC };
+}
+// ---------- app ----------
+const KEY = 'pib-rehearsal-v2';
+let state, tab = 'schedule', openPanel = null;
+function load(){ try{ const s = localStorage.getItem(KEY); if(s) return JSON.parse(s);}catch(e){} return null; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+const today = new Date().toISOString().slice(0,10);
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtDate = (iso, long) => new Date(iso+'T12:00:00Z').toLocaleDateString('en-GB',{weekday: long?'long':'short', day:'numeric', month:'short', timeZone:'UTC'});
+const sceneById = id => state.scenes.find(s => s.id === id);
+function addMins(hhmm, m){ const [h,mm] = hhmm.split(':').map(Number); const t = h*60+mm+m; return String(Math.floor(t/60)%24).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); }
+function toast(msg){ const d = document.createElement('div'); d.className='toast'; d.textContent=msg; document.body.appendChild(d); setTimeout(()=>d.remove(), 2200); }
+
+function nightInfo(n){
+  const everyone = allActors(state);
+  if (n.type === 'cancelled') return { called: [], off: everyone, items: [], mins: 0, issues: [] };
+  if (n.type === 'run') {
+    const away = everyone.filter(a => n.away.includes(a));
+    return { called: everyone, off: [], items: [], mins: state.settings.sessionMins, issues: away.length ? [away.join(', ')+' away for the run'] : [], calls:{} };
+  }
+  let t = state.settings.startTime, mins = 0; const items = [], calls = {}, called = [], issues = [];
+  n.scenes.forEach(id => {
+    const s = sceneById(id); if(!s) return;
+    const actors = actorsFor(state, s);
+    items.push({ s, time: t, actors });
+    actors.forEach(a => { if(!(a in calls)) { calls[a] = t; called.push(a); } });
+    const missing = actors.filter(a => n.away.includes(a));
+    if (missing.length) issues.push(missing.join(', ') + ' away but needed for ' + s.name);
+    t = addMins(t, s.mins); mins += s.mins;
+  });
+  if (mins > state.settings.sessionMins) issues.push('Over time by ' + (mins - state.settings.sessionMins) + ' min');
+  const off = everyone.filter(a => !called.includes(a));
+  return { called, off, items, mins, issues, calls, end: t };
+}
+function coverage(){
+  const c = Object.fromEntries(state.scenes.map(s => [s.id, 0]));
+  state.nights.forEach(n => { if(n.type==='rehearsal') n.scenes.forEach(id => { if(id in c) c[id]++; }); });
+  return c;
+}
+function replan(){
+  state.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
+  const r = plan(state);
+  r.nights.forEach((list, i) => { if (state.nights[i].type === 'rehearsal') state.nights[i].scenes = list; else state.nights[i].scenes = []; });
+  save(); render(); toast('Schedule re-planned');
+}
+function whatsapp(n){
+  const info = nightInfo(n);
+  let t = '🎭 *Puss in Boots – ' + fmtDate(n.date, true) + '*\n';
+  if (n.type === 'cancelled') return t + 'No rehearsal this week.';
+  if (n.type === 'run') return t + 'FULL RUN – everyone called, ' + state.settings.startTime + '.' + (n.note ? '\n'+n.note : '');
+  if (!info.items.length) return t + 'Nothing scheduled yet.';
+  t += '\n';
+  info.items.forEach(it => { t += it.time + '  ' + it.s.name + ' (' + it.s.place + ')\n'; });
+  t += 'Finish approx ' + info.end + '\n\n*Called:*\n';
+  info.called.forEach(a => { t += '• ' + a + ' – ' + info.calls[a] + '\n'; });
+  if (info.off.length) t += '\n*Night off:* ' + info.off.join(', ');
+  if (n.note) t += '\n\n' + n.note;
+  return t;
+}
+async function copyText(text){
+  try { await navigator.clipboard.writeText(text); toast('Copied – paste into WhatsApp'); }
+  catch(e){ showModal(text); }
+}
+function showModal(text){
+  const m = document.createElement('div'); m.className='modal';
+  m.innerHTML = '<div class="box"><p class="note">Press and hold in the box, choose <b>Select All</b>, then <b>Copy</b>.</p><textarea>'+esc(text)+'</textarea><div class="bar" style="margin-top:8px"><button class="btn" id="m-sel">Select all</button><button class="btn primary" id="m-done">Done</button></div></div>';
+  const ta = m.querySelector('textarea');
+  m.querySelector('#m-sel').onclick = () => { ta.focus(); ta.setSelectionRange(0, ta.value.length); try{ document.execCommand('copy') && toast('Copied'); }catch(e){} };
+  m.querySelector('#m-done').onclick = () => m.remove(); m.onclick = e => { if(e.target===m) m.remove(); };
+  document.body.appendChild(m);
+}
+function renderSchedule(){
+  const cov = coverage(), R = state.settings.minReps;
+  let h = '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>';
+  h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
+  state.nights.forEach((n, i) => {
+    const info = nightInfo(n), past = n.date < today;
+    const tagCls = n.type==='run' ? 'run' : n.type==='cancelled' ? 'off' : '';
+    const tagTxt = n.type==='run' ? 'Full run' : n.type==='cancelled' ? 'Cancelled' : 'Rehearsal';
+    const weeksTo = Math.round((new Date(state.settings.opening) - new Date(n.date))/(7*864e5));
+    h += '<div class="card'+(past?' past':'')+'"><div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div><div class="wk">'+weeksTo+' wk'+(weeksTo===1?'':'s')+' to opening</div></div>';
+    h += '<span class="tag '+tagCls+'">'+tagTxt+'</span>';
+    if (n.type==='rehearsal') h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
+    h += '</div><div class="cb">';
+    if (n.type==='rehearsal') {
+      if (!info.items.length) h += '<p class="note">No scenes yet.</p>';
+      info.items.forEach((it, k) => {
+        h += '<div class="sc"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span><button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button></div>';
+      });
+      const pct = Math.min(100, info.mins / state.settings.sessionMins * 100);
+      h += '<div class="meter'+(info.mins>state.settings.sessionMins?' over':'')+'"><i style="width:'+pct+'%"></i></div><div class="meta"><span>'+info.mins+' of '+state.settings.sessionMins+' min</span><span>'+(info.items.length? 'finish ≈ '+info.end : '')+'</span></div>';
+    }
+    if (n.type!=='cancelled') {
+      h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+(info.called.map(a => esc(a) + (info.calls && info.calls[a] && info.calls[a]!==state.settings.startTime ? ' <span style="color:var(--muted)">'+info.calls[a]+'</span>' : '')).join(', ') || '—')+'</div>';
+      if (info.off.length) h += '<div class="ppl"><b class="off">Night off:</b> '+esc(info.off.join(', '))+'</div>';
+    }
+    if (n.away.length) h += '<div class="ppl"><b style="color:var(--bad)">Away:</b> '+esc(n.away.join(', '))+'</div>';
+    if (n.note) h += '<div class="ppl"><b>Note:</b> '+esc(n.note)+'</div>';
+    info.issues.forEach(x => h += '<div class="warn">⚠ '+esc(x)+'</div>');
+    h += '</div>';
+    if (openPanel === i) {
+      h += '<div class="panel"><label class="f">Night type</label><select data-type="'+i+'"><option value="rehearsal"'+(n.type==='rehearsal'?' selected':'')+'>Rehearsal</option><option value="run"'+(n.type==='run'?' selected':'')+'>Full run</option><option value="cancelled"'+(n.type==='cancelled'?' selected':'')+'>Cancelled</option></select>';
+      h += '<label class="f">Who can\'t make it? (tap to mark away)</label><div class="chips">' + allActors(state).map(a => '<button data-away="'+i+'" data-a="'+esc(a)+'" class="'+(n.away.includes(a)?'away':'')+'">'+esc(a)+'</button>').join('') + '</div>';
+      if (n.type==='rehearsal') {
+        h += '<label class="f">Add a scene</label><select data-add="'+i+'"><option value="">Choose…</option>' + state.scenes.filter(s => !n.scenes.includes(s.id)).map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+s.mins+' min)</option>').join('') + '</select>';
+      }
+      h += '<label class="f">Note for the cast</label><input data-note="'+i+'" value="'+esc(n.note)+'" placeholder="e.g. bring scripts, Dipsy costume fitting" style="width:100%">';
+      h += '</div>';
+    }
+    h += '<div class="foot"><button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button><a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div></div>';
+  });
+  return h;
+}
+function renderPeople(){
+  const people = allActors(state);
+  const nights = state.nights.filter(n => n.type !== 'cancelled');
+  const infos = nights.map(nightInfo);
+  let h = '<h2>Who\'s called when</h2><p class="note">● called · ○ night off · ✕ away</p><div class="card grid"><table><tr><th>Name</th>' + nights.map(n => '<th>'+fmtDate(n.date).replace(/^\w+ /,'')+'</th>').join('') + '<th>Off</th></tr>';
+  people.forEach(p => {
+    let off = 0;
+    h += '<tr><td><b>'+esc(p)+'</b><br><small style="color:var(--muted)">'+esc(state.cast.filter(c => c.actor.trim()===p).map(c => c.role).join(', '))+'</small></td>';
+    nights.forEach((n, k) => {
+      const called = infos[k].called.includes(p), away = n.away.includes(p);
+      if (!called) off++;
+      h += '<td class="c '+(away?'a':called?'y':'o')+'">'+(away?'✕':called?'●':'○')+'</td>';
+    });
+    h += '<td class="c">'+off+'</td></tr>';
+  });
+  h += '</table></div>';
+  const unc = state.cast.filter(c => !c.actor.trim());
+  if (unc.length) h += '<p class="note">Not yet cast: '+esc(unc.map(c=>c.role).join(', '))+' (add them in Setup).</p>';
+  return h;
+}
+function renderScenes(){
+  const cov = coverage();
+  let h = '<h2>Scenes</h2><p class="note">Rehearsal minutes are estimates from the script length – adjust them and re-plan.</p>';
+  state.scenes.forEach((s, i) => {
+    const when = state.nights.filter(n => n.type==='rehearsal' && n.scenes.includes(s.id)).map(n => fmtDate(n.date));
+    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div><input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"> <span class="wk">min</span></div>';
+    h += '<div class="ppl">'+s.roles.map(r => { const a = (state.cast.find(c=>c.role===r)||{}).actor; return esc(r)+' <span style="color:var(--muted)">('+esc(a && a.trim() ? a : '?')+')</span>'; }).join(', ')+'</div>';
+    h += '<div class="ppl"><b>Rehearsed '+cov[s.id]+'×:</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
+  });
+  return h;
+}
+function renderSetup(){
+  const st = state.settings;
+  let h = '<h2>Session</h2><div class="card"><div class="cb" style="padding-top:6px">';
+  h += '<label class="f">Start time</label><input type="time" id="s-start" value="'+st.startTime+'">';
+  h += '<label class="f">Session length (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
+  h += '<label class="f">Rehearse each scene at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
+  h += '<label class="f">Add an extra rehearsal date</label><input type="date" id="s-date"> <button class="btn small" id="s-adddate">Add</button>';
+  h += '</div></div><h2>Cast</h2><div class="card"><div class="cb" style="padding-top:6px"><table>';
+  state.cast.forEach((c, i) => { h += '<tr><td>'+esc(c.role)+'</td><td><input data-cast="'+i+'" value="'+esc(c.actor)+'" placeholder="?" style="width:100%"></td></tr>'; });
+  h += '</table><p class="note">Give two roles the same name if one person doubles.</p></div></div>';
+  h += '<h2>Backup</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">The schedule is saved in this browser only. Copy a backup now and then (e.g. into a WhatsApp chat to yourself) – paste it back to restore or move to another phone.</p><div class="bar"><button class="btn" id="b-copy">Copy backup</button><button class="btn" id="b-paste">Restore from backup</button><button class="btn ghost" id="b-reset" style="color:var(--bad)">Reset everything</button></div></div></div>';
+  return h;
+}
+function render(){
+  $('#count').textContent = 'Opening night: ' + fmtDate(state.settings.opening, true) + ' · ' + Math.max(0, Math.ceil((new Date(state.settings.opening) - new Date(today))/864e5)) + ' days to go';
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+  $('#main').innerHTML = tab==='schedule' ? renderSchedule() : tab==='people' ? renderPeople() : tab==='scenes' ? renderScenes() : renderSetup();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.t) { tab = d.t; render(); return; }
+  if (b.id === 'replan') return replan();
+  if (d.lock) { const n = state.nights[+d.lock]; n.locked = !n.locked; save(); render(); return; }
+  if (d.edit) { openPanel = openPanel === +d.edit ? null : +d.edit; render(); return; }
+  if (d.wa) return copyText(whatsapp(state.nights[+d.wa]));
+  if (d.rm) { const [i,k] = d.rm.split(':').map(Number); state.nights[i].scenes.splice(k,1); state.nights[i].locked = true; save(); render(); return; }
+  if (d.away) { const n = state.nights[+d.away]; const a = d.a; n.away = n.away.includes(a) ? n.away.filter(x => x!==a) : [...n.away, a]; save(); render(); return; }
+  if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',away:[],scenes:[],locked:false,note:''}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
+  if (b.id === 'b-copy') return copyText(JSON.stringify(state));
+  if (b.id === 'b-paste') {
+    const m = document.createElement('div'); m.className='modal';
+    m.innerHTML = '<div class="box"><p class="note">Paste your backup text:</p><textarea></textarea><div class="bar" style="margin-top:8px"><button class="btn primary" id="r-ok">Restore</button><button class="btn" id="r-no">Cancel</button></div><div id="r-err" class="warn" style="display:none"></div></div>';
+    document.body.appendChild(m);
+    m.querySelector('#r-no').onclick = () => m.remove();
+    m.querySelector('#r-ok').onclick = () => { try { const s = JSON.parse(m.querySelector('textarea').value); if(!s.nights||!s.scenes) throw 0; state = s; save(); m.remove(); render(); toast('Restored'); } catch(err){ const x = m.querySelector('#r-err'); x.style.display='block'; x.textContent='That doesn\'t look like a backup.'; } };
+    return;
+  }
+  if (b.id === 'b-reset') {
+    const m = document.createElement('div'); m.className='modal';
+    m.innerHTML = '<div class="box"><p>Reset all dates, absences and edits back to the start?</p><div class="bar"><button class="btn" style="background:var(--bad);color:#fff;border-color:var(--bad)" id="x-ok">Reset</button><button class="btn" id="x-no">Cancel</button></div></div>';
+    document.body.appendChild(m);
+    m.querySelector('#x-no').onclick = () => m.remove();
+    m.querySelector('#x-ok').onclick = () => { m.remove(); state = defaultState(); replan(); };
+  }
+});
+document.addEventListener('change', e => {
+  const el = e.target, d = el.dataset;
+  if (d.type) { const n = state.nights[+d.type]; n.type = el.value; if (n.type!=='rehearsal') n.scenes = []; save(); render(); toast('Re-plan to rebalance the other nights'); }
+  else if (d.add) { if (el.value) { const n = state.nights[+d.add]; n.scenes.push(el.value); const order = state.scenes.map(s=>s.id); n.scenes.sort((a,b)=>order.indexOf(a)-order.indexOf(b)); n.locked = true; save(); render(); } }
+  else if (d.note !== undefined) { state.nights[+d.note].note = el.value; save(); render(); }
+  else if (d.mins) { state.scenes[+d.mins].mins = Math.max(5, +el.value||5); save(); render(); }
+  else if (d.cast) { state.cast[+d.cast].actor = el.value; save(); }
+  else if (el.id === 's-start') { state.settings.startTime = el.value || '19:30'; save(); }
+  else if (el.id === 's-len') { state.settings.sessionMins = Math.max(30, +el.value||120); save(); }
+  else if (el.id === 's-reps') { state.settings.minReps = +el.value; save(); toast('Re-plan to apply'); }
+});
+state = load();
+if (!state) { state = defaultState(); replan(); } else render();
+</script>
+</body></html>
