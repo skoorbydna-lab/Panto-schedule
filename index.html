@@ -115,10 +115,10 @@ const DEFAULT_SCENES = [
   { id: 'a1s2', name: 'Act 1 Scene 2', place: 'The palace', mins: 20, roles: ['Queen','Princess','Royal Guard 1','Puss'] },
   { id: 'a1s3', name: 'Act 1 Scene 3', place: 'The windmill', mins: 30, roles: ['Hickory','Dickory','Dipsy','Olaf','Gunther','Fairy'] },
   { id: 'a1s4', name: 'Act 1 Scene 4', place: 'The picnic', mins: 60, roles: ['Patty Cake','Jack','Puss','Hickory','Dickory','Dipsy','Queen','Princess','Royal Guard 1','Royal Guard 2'] },
-  { id: 'a1s5', name: 'Act 1 Scene 5', place: 'The glade', mins: 25, roles: ['Jack','Princess','Hickory','Dickory','Olaf','Queen','Patty Cake'] },
+  { id: 'a1s5', name: 'Act 1 Scene 5', place: 'The glade', mins: 25, roles: ['Jack','Princess','Hickory','Dickory','Olaf','Gunther','Queen','Patty Cake'] },
   { id: 'a2s1', name: 'Act 2 Scene 1', place: 'The castle door', mins: 35, roles: ['Jack','Patty Cake','Hickory','Dickory','Queen','Dipsy','Ghost'] },
   { id: 'a2s2', name: 'Act 2 Scene 2', place: 'Front of tabs', mins: 15, roles: ['Hickory','Dickory','Olaf','Gunther'] },
-  { id: 'a2s3', name: 'Act 2 Scene 3', place: 'Inside the castle', mins: 45, roles: ['Princess','Fairy','Olaf','Hickory','Dickory','Patty Cake','Queen','Jack','Puss','Dipsy'] },
+  { id: 'a2s3', name: 'Act 2 Scene 3', place: 'Inside the castle', mins: 45, roles: ['Princess','Fairy','Olaf','Gunther','Hickory','Dickory','Patty Cake','Queen','Jack','Puss','Dipsy'] },
   { id: 'a2s4', name: 'Act 2 Scene 4', place: 'Front of tabs', mins: 15, roles: ['Hickory','Dickory'] },
   { id: 'a2s5', name: 'Act 2 Scene 5 + Finale', place: 'Wedding & walkdown', mins: 30, roles: ALL_ROLES.filter(r => r !== 'Ghost') }
 ];
@@ -127,18 +127,35 @@ function mondays(startISO, endISO) {
   while (d < end) { out.push(d.toISOString().slice(0, 10)); d = new Date(d.getTime() + 7 * 864e5); }
   return out;
 }
+// Thursday availability for the starting schedule: only these can make Thursdays
+const THURSDAY_AWAY = ['Phil R', 'Mel', 'Beth', 'Niki', 'Phil B', 'Ghost'];
+const BB = 'Brass Button', BR = 'The Bridge', HU = 'Hulland';
+const DEFAULT_NIGHTS = [
+  ['2026-11-23', BB, 'rehearsal', '7.30pm', '', 'AGM first', ['a1s1', 'a1s3']],
+  ['2026-11-26', BR, 'rehearsal', '7.30pm', '', 'Committee meeting first'],
+  ['2026-11-30', BB], ['2026-12-03', BR], ['2026-12-07', BB], ['2026-12-10', BR],
+  ['2026-12-14', BB], ['2026-12-17', BR],
+  ['2027-01-04', BB], ['2027-01-07', BR], ['2027-01-11', BB], ['2027-01-14', BR],
+  ['2027-01-18', BB], ['2027-01-21', BB],
+  ['2027-01-24', HU, 'event', '10am–2pm', 'Set up'],
+  ['2027-01-25', HU, 'event', '6–10pm', 'Tech / bits'],
+  ['2027-01-26', HU, 'run', '6–10pm', 'Tech / full run'],
+  ['2027-01-27', '', 'cancelled', '', 'Night off!'],
+  ['2027-01-28', HU, 'run', '', 'Dress run'],
+  ['2027-01-29', HU, 'event', '7pm', 'First performance'],
+  ['2027-01-30', HU, 'event', '2.30pm & 7pm', 'Two shows'],
+  ['2027-01-31', HU, 'event', '11am–1pm', 'Break the set']
+];
 function defaultState() {
-  const dates = mondays('2026-11-23', '2027-01-29');
   return {
-    v: 1,
+    v: 2,
     settings: { sessionMins: 120, startTime: '19:30', minReps: 2, opening: '2027-01-29' },
     cast: DEFAULT_CAST.map(c => ({ ...c })),
     scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
-    nights: dates.map(date => ({
-      date,
-      type: (date === '2027-01-18' || date === '2027-01-25') ? 'run' : 'rehearsal',
-      away: [], scenes: [], locked: false, note: ''
-    }))
+    nights: DEFAULT_NIGHTS.map(([date, venue, type = 'rehearsal', time = '7.30pm', label = '', note = '', scenes]) => {
+      const thu = new Date(date + 'T12:00:00Z').getUTCDay() === 4 && type === 'rehearsal';
+      return { date, venue, type, time, label, note, away: thu ? [...THURSDAY_AWAY] : [], scenes: scenes ? [...scenes] : [], locked: !!scenes };
+    })
   };
 }
 function actorsFor(state, scene) {
@@ -216,6 +233,22 @@ function plan(state, opts = {}) {
   }
   const result = N.map((n, i) => (n.type === 'rehearsal' && n.locked) ? n.scenes.slice() : []);
   best.forEach((ni, k) => result[ni].push(S[slots[k]].id));
+  const reps = Object.fromEntries(S.map(sc => [sc.id, 0]));
+  result.forEach(l => l.forEach(id => reps[id]++));
+  free.forEach(ni => {
+    if (result[ni].length) return;
+    const capN = N[ni].mins || cap; let mins = 0;
+    const cands = S.map((sc, si) => {
+      const miss = sceneActors[si].filter(a => away[ni].has(a)).length;
+      return { sc, miss, present: sceneActors[si].length - miss };
+    }).filter(c => c.present >= 2 && c.miss <= 2 && c.miss < c.present);
+    while (true) {
+      const pick = cands.filter(c => !result[ni].includes(c.sc.id) && mins + c.sc.mins <= capN)
+        .sort((x, y) => (x.miss - y.miss) || (reps[x.sc.id] - reps[y.sc.id]) || (x.sc.mins - y.sc.mins))[0];
+      if (!pick) break;
+      result[ni].push(pick.sc.id); reps[pick.sc.id]++; mins += pick.sc.mins;
+    }
+  });
   result.forEach(list => list.sort((a, b) => sceneIdx[a] - sceneIdx[b]));
   return { nights: result, cost: bestC };
 }
@@ -231,7 +264,7 @@ const FIREBASE_CONFIG = {
 };
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
-const KEY = 'pib-rehearsal-v2';
+const KEY = 'pib-rehearsal-v3';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
@@ -268,7 +301,7 @@ function initLive(){
   live = true; canEdit = false;
   firebase.auth().onAuthStateChanged(u => {
     canEdit = !!u && !u.isAnonymous;
-    if (canEdit && !docExists) { state = state || defaultState(); replan(); } else render();
+    maybeInit(); render();
   });
   firebase.firestore().collection('panto_away').onSnapshot(qs => {
     const m = {}; qs.forEach(d => { const x = d.data(); if (x.name && Array.isArray(x.dates)) m[x.name] = x.dates; });
@@ -276,12 +309,15 @@ function initLive(){
   }, () => {});
   docRef.onSnapshot(snap => {
     if (snap.metadata.hasPendingWrites) return;
-    docExists = snap.exists;
-    if (snap.exists) { try { state = JSON.parse(snap.data().data); localStorage.setItem(KEY, snap.data().data); } catch(e){} }
+    docExists = false; snapLoaded = true;
+    if (snap.exists) { try { const p = JSON.parse(snap.data().data); if (p.v === 2) { state = p; docExists = true; localStorage.setItem(KEY, snap.data().data); } } catch(e){} }
+    maybeInit();
     if (!(canEdit && openPanel !== null)) render();
   }, () => toast('Offline – showing last saved copy'));
   return true;
 }
+let snapLoaded = false, initing = false;
+function maybeInit(){ if (canEdit && snapLoaded && !docExists && !initing) { initing = true; state = defaultState(); replan(); } }
 async function signIn(){
   const pw = $('#pw').value, err = $('#pw-err');
   try { await firebase.auth().signInWithEmailAndPassword(DIRECTOR_EMAIL, pw); tab = 'schedule'; toast('Signed in – you can edit'); }
@@ -296,30 +332,30 @@ function addMins(hhmm, m){ const [h,mm] = hhmm.split(':').map(Number); const t =
 function toast(msg){ const d = document.createElement('div'); d.className='toast'; d.textContent=msg; document.body.appendChild(d); setTimeout(()=>d.remove(), 2200); }
 
 function nightInfo(n){
-  const everyone = allActors(state);
-  if (n.type === 'cancelled') return { called: [], off: everyone, items: [], mins: 0, issues: [] };
-  if (n.type === 'run') {
-    const away = everyone.filter(a => effAway(n).includes(a));
-    return { called: everyone, off: [], items: [], mins: n.mins || state.settings.sessionMins, issues: away.length ? [away.join(', ')+' away for the run'] : [], calls:{} };
+  const everyone = allActors(state), away = effAway(n);
+  if (n.type === 'cancelled') return { called: [], off: everyone, items: [], issues: [] };
+  if (n.type === 'run' || n.type === 'event') {
+    const a = everyone.filter(x => away.includes(x));
+    return { called: everyone, off: [], items: [], issues: a.length ? [a.join(', ') + ' away'] : [] };
   }
-  const start = n.start || state.settings.startTime, cap = n.mins || state.settings.sessionMins;
-  let t = start, mins = 0; const items = [], calls = {}, called = [], issues = [];
+  const items = [], called = [], issues = [];
   n.scenes.forEach(id => {
-    const s = sceneById(id); if(!s) return;
-    const actors = actorsFor(state, s);
-    items.push({ s, time: t, actors });
-    actors.forEach(a => { if(!(a in calls)) { calls[a] = t; called.push(a); } });
-    const missing = actors.filter(a => effAway(n).includes(a));
-    if (missing.length) issues.push(missing.join(', ') + ' away but needed for ' + s.name);
-    t = addMins(t, s.mins); mins += s.mins;
+    const s = sceneById(id); if (!s) return;
+    const actors = actorsFor(state, s), missing = actors.filter(a => away.includes(a));
+    items.push({ s, actors, missing });
+    actors.forEach(a => { if (!called.includes(a)) called.push(a); });
   });
-  if (mins > cap) issues.push('Over time by ' + (mins - cap) + ' min');
   const off = everyone.filter(a => !called.includes(a));
-  return { called, off, items, mins, issues, calls, end: t, start, cap };
+  return { called, off, items, issues };
 }
+function tagText(n){ return n.label || (n.type==='run' ? 'Full run' : n.type==='cancelled' ? 'Cancelled' : n.type==='event' ? 'Event' : n.extra ? 'Extra rehearsal' : 'Rehearsal'); }
+function whereWhen(n){ return [n.venue, n.time].filter(Boolean).join(' · '); }
 function coverage(){
-  const c = Object.fromEntries(state.scenes.map(s => [s.id, 0]));
-  state.nights.forEach(n => { if(n.type==='rehearsal') n.scenes.forEach(id => { if(id in c) c[id]++; }); });
+  const c = Object.fromEntries(state.scenes.map(s => [s.id, { full: 0, part: 0 }]));
+  state.nights.forEach(n => {
+    if (n.type !== 'rehearsal') return; const aw = effAway(n);
+    n.scenes.forEach(id => { const s = sceneById(id); if (!s) return; c[id][actorsFor(state, s).some(a => aw.includes(a)) ? 'part' : 'full']++; });
+  });
   return c;
 }
 function replan(){
@@ -330,16 +366,17 @@ function replan(){
 }
 function whatsapp(n){
   const info = nightInfo(n);
-  let t = '🎭 *Puss in Boots – ' + fmtDate(n.date, true) + (n.extra ? ' (extra rehearsal)' : '') + '*\n';
-  if (n.type === 'cancelled') return t + 'No rehearsal this week.';
-  if (n.type === 'run') return t + 'FULL RUN – everyone called, ' + (n.start || state.settings.startTime) + '.' + (n.note ? '\n'+n.note : '');
-  if (!info.items.length) return t + 'Nothing scheduled yet.';
-  t += '\n';
-  info.items.forEach(it => { t += it.time + '  ' + it.s.name + ' (' + it.s.place + ')\n'; });
-  t += 'Finish approx ' + info.end + '\n\n*Called:*\n';
-  info.called.forEach(a => { t += '• ' + a + ' – ' + info.calls[a] + '\n'; });
+  let t = '🎭 *Puss in Boots – ' + fmtDate(n.date, true) + '*\n';
+  if (whereWhen(n)) t += '📍 ' + whereWhen(n) + '\n';
+  if (n.type !== 'rehearsal' || n.label) t += '*' + tagText(n) + '*\n';
+  if (n.type === 'cancelled') return t + (n.note ? '\n' + n.note : '');
+  if (n.type === 'run' || n.type === 'event') return t + 'Everyone called.' + (n.note ? '\n\n' + n.note : '');
+  if (n.note) t += n.note + '\n';
+  if (!info.items.length) return t + '\nScenes to be confirmed.';
+  t += '\n*Scenes:*\n';
+  info.items.forEach(it => { t += '• ' + it.s.name + (it.missing.length ? ' (read-in for ' + it.missing.join(', ') + ')' : '') + '\n'; });
+  t += '\n*Called:* ' + info.called.filter(a => !effAway(n).includes(a)).join(', ');
   if (info.off.length) t += '\n*Night off:* ' + info.off.join(', ');
-  if (n.note) t += '\n\n' + n.note;
   return t;
 }
 async function copyText(text){
@@ -357,63 +394,58 @@ function showModal(text){
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
-  if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input type="time" id="x-start" value="'+state.settings.startTime+'"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
+  if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input id="x-venue" list="venues" placeholder="Venue" style="width:130px"><input id="x-time" value="7.30pm" style="width:80px"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
+  h += '<datalist id="venues">' + [...new Set(state.nights.map(n => n.venue).filter(Boolean))].map(v => '<option value="'+esc(v)+'">').join('') + '</datalist>';
   if (live && !docExists) h += '<p class="note">The schedule hasn\'t been published yet.</p>';
   const people = allActors(state); if (me && !people.includes(me)) me = '';
   h += '<div class="card mebar"><div class="cb" style="padding-top:10px"><div class="bar" style="margin:0"><b>Me:</b><select id="me-sel"><option value="">Everyone</option>' + people.map(a => '<option'+(a===me?' selected':'')+'>'+esc(a)+'</option>').join('') + '</select>' + (me ? '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="me-only"'+(onlyMine?' checked':'')+' style="width:20px;height:20px"> Only show when I\'m needed</label>' : '') + '</div>';
-  if (me) { const mine = state.nights.filter(n => n.type !== 'cancelled' && nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+state.nights.filter(n=>n.type!=='cancelled').length+' nights.</p>'; }
+  if (me) { const all = state.nights.filter(n => n.type !== 'cancelled'); const mine = all.filter(n => nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+all.length+' dates.</p>'; }
   h += '</div></div>';
-  if (!(me && onlyMine)) h += '<div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id] < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id]+'</span>').join('') + '</div>';
+  if (!(me && onlyMine)) h += '<p class="note" style="margin:0 0 4px">Times each scene is rehearsed with its full cast (+ with read-ins):</p><div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id].full < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id].full+(cov[s.id].part ? ' (+'+cov[s.id].part+')' : '')+'</span>').join('') + '</div>';
   let shown = 0;
   state.nights.forEach((n, i) => {
-    const info = nightInfo(n), past = n.date < today;
+    const info = nightInfo(n), past = n.date < today, aw = effAway(n);
     const needed = me && info.called.includes(me);
     if (me && onlyMine && (!needed || n.type === 'cancelled')) return;
     shown++;
-    const tagCls = n.type==='run' ? 'run' : n.type==='cancelled' ? 'off' : '';
-    const tagTxt = n.type==='run' ? 'Full run' : n.type==='cancelled' ? 'Cancelled' : n.extra ? 'Extra' : 'Rehearsal';
-    const weeksTo = Math.round((new Date(state.settings.opening) - new Date(n.date))/(7*864e5));
-    h += '<div class="card'+(past?' past':'')+'"><div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div><div class="wk">'+weeksTo+' wk'+(weeksTo===1?'':'s')+' to opening</div></div>';
-    h += '<span class="tag '+tagCls+'">'+tagTxt+'</span>';
+    const tagCls = n.type==='run' || n.type==='event' ? 'run' : n.type==='cancelled' ? 'off' : '';
+    h += '<div class="card'+(past?' past':'')+'"><div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div>'+(whereWhen(n) ? '<div class="wk">📍 '+esc(whereWhen(n))+'</div>' : '')+'</div>';
+    h += '<span class="tag '+tagCls+'">'+esc(tagText(n))+'</span>';
     if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
     if (me && n.type !== 'cancelled') {
-      const iAmAway = effAway(n).includes(me);
-      h += '<div class="mine'+(iAmAway?' away':needed?'':' off')+'"><span>'+(iAmAway ? '✕ '+esc(me)+' – can\'t make it' : needed ? '⭐ '+esc(me)+' – arrive '+(n.type==='run' ? (n.start||state.settings.startTime) : info.calls[me]) : esc(me)+' – night off')+'</span>';
+      const iAmAway = aw.includes(me);
+      h += '<div class="mine'+(iAmAway?' away':needed?'':' off')+'"><span>'+(iAmAway ? '✕ '+esc(me)+' – can\'t make it' : needed ? '⭐ '+esc(me)+' – needed' : esc(me)+' – night off')+'</span>';
       if (!past && (!iAmAway || castSaid(n, me))) h += '<button class="btn small" data-cant="'+i+'">'+(iAmAway ? 'I can make it now' : 'Can\'t make it')+'</button>';
       h += '</div>';
     }
+    if (n.note) h += '<div class="ppl" style="margin:0 0 6px"><b>Note:</b> '+esc(n.note)+'</div>';
     if (n.type==='rehearsal') {
-      if (!info.items.length) h += '<p class="note">No scenes yet.</p>';
+      if (!info.items.length) h += '<p class="note">Scenes to be confirmed.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="t">'+it.time+'</span><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+it.s.mins+' min · '+esc(it.actors.join(', '))+'</small></span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
+        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+esc(it.actors.join(', '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
-      const pct = Math.min(100, info.mins / info.cap * 100);
-      h += '<div class="meter'+(info.mins>info.cap?' over':'')+'"><i style="width:'+pct+'%"></i></div><div class="meta"><span>'+info.mins+' of '+info.cap+' min</span><span>'+(info.items.length? 'finish ≈ '+info.end : '')+'</span></div>';
-    }
-    if (n.type!=='cancelled') {
-      h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+(info.called.map(a => esc(a) + (info.calls && info.calls[a] && info.calls[a]!==info.start ? ' <span style="color:var(--muted)">'+info.calls[a]+'</span>' : '')).join(', ') || '—')+'</div>';
+    } else if (n.type !== 'cancelled') h += '<p class="note" style="margin:4px 0">Everyone called.</p>';
+    if (n.type==='rehearsal' && info.items.length) {
+      h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+info.called.map(a => aw.includes(a) ? '<s style="color:var(--bad)">'+esc(a)+'</s>' : esc(a)).join(', ')+'</div>';
       if (info.off.length) h += '<div class="ppl"><b class="off">Night off:</b> '+esc(info.off.join(', '))+'</div>';
     }
-    const aw = effAway(n); if (aw.length) h += '<div class="ppl"><b style="color:var(--bad)">Away:</b> '+esc(aw.join(', '))+'</div>';
-    if (n.note) h += '<div class="ppl"><b>Note:</b> '+esc(n.note)+'</div>';
-    info.issues.forEach(x => h += '<div class="warn">⚠ '+esc(x)+'</div>');
+    if (aw.length && n.type !== 'cancelled') h += '<div class="ppl"><b style="color:var(--bad)">Can\'t make it:</b> '+esc(aw.join(', '))+'</div>';
     h += '</div>';
     if (openPanel === i) {
-      h += '<div class="panel"><label class="f">Night type</label><select data-type="'+i+'"><option value="rehearsal"'+(n.type==='rehearsal'?' selected':'')+'>Rehearsal</option><option value="run"'+(n.type==='run'?' selected':'')+'>Full run</option><option value="cancelled"'+(n.type==='cancelled'?' selected':'')+'>Cancelled</option></select>';
-      h += '<label class="f">Who can\'t make it? (tap to mark away)</label><div class="chips">' + allActors(state).map(a => '<button data-away="'+i+'" data-a="'+esc(a)+'" class="'+(effAway(n).includes(a)?'away':'')+'">'+esc(a)+'</button>').join('') + '</div>';
-      if (n.type==='rehearsal') {
-        h += '<label class="f">Add a scene</label><select data-add="'+i+'"><option value="">Choose…</option>' + state.scenes.filter(s => !n.scenes.includes(s.id)).map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+s.mins+' min)</option>').join('') + '</select>';
-      }
-      h += '<label class="f">Start time and length (minutes)</label><div class="bar"><input type="time" data-start="'+i+'" value="'+(n.start||state.settings.startTime)+'"><input type="number" min="30" step="15" data-len="'+i+'" value="'+(n.mins||state.settings.sessionMins)+'" style="width:80px"></div>';
-      h += '<label class="f">Note for the cast</label><input data-note="'+i+'" value="'+esc(n.note)+'" placeholder="e.g. bring scripts, Dipsy costume fitting" style="width:100%">';
-      if (n.extra) h += '<div class="bar" style="margin-top:10px"><button class="btn small" style="color:var(--bad)" data-del="'+i+'">Remove this date</button></div>';
+      h += '<div class="panel"><label class="f">Type of night</label><select data-type="'+i+'">' + [['rehearsal','Rehearsal'],['run','Full / dress run'],['event','Other (set up, tech, show…)'],['cancelled','Cancelled / night off']].map(([v,t]) => '<option value="'+v+'"'+(n.type===v?' selected':'')+'>'+t+'</option>').join('') + '</select>';
+      h += '<label class="f">Label (optional)</label><input data-label="'+i+'" value="'+esc(n.label||'')+'" placeholder="e.g. Dress run, Set up" style="width:100%">';
+      h += '<label class="f">Venue and time</label><div class="bar"><input data-venue="'+i+'" list="venues" value="'+esc(n.venue||'')+'" placeholder="Venue" style="flex:1"><input data-time="'+i+'" value="'+esc(n.time||'')+'" placeholder="7.30pm" style="width:110px"></div>';
+      h += '<label class="f">Who can\'t make it? (tap to mark away)</label><div class="chips">' + allActors(state).map(a => '<button data-away="'+i+'" data-a="'+esc(a)+'" class="'+(aw.includes(a)?'away':'')+'">'+esc(a)+'</button>').join('') + '</div>';
+      if (n.type==='rehearsal') h += '<label class="f">Add a scene</label><select data-add="'+i+'"><option value="">Choose…</option>' + state.scenes.filter(s => !n.scenes.includes(s.id)).map(s => '<option value="'+s.id+'">'+esc(s.name)+'</option>').join('') + '</select>';
+      h += '<label class="f">Note for the cast</label><input data-note="'+i+'" value="'+esc(n.note||'')+'" placeholder="e.g. AGM first, bring scripts" style="width:100%">';
+      h += '<div class="bar" style="margin-top:10px"><button class="btn small" style="color:var(--bad)" data-del="'+i+'">Remove this date</button></div>';
       h += '</div>';
     }
     if (canEdit) h += '<div class="foot"><button class="btn small" data-edit="'+i+'">'+(openPanel===i?'Done':'Edit / who\'s away')+'</button><a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(whatsapp(n))+'" target="_blank" rel="noopener">Send to WhatsApp</a><button class="btn small" data-wa="'+i+'">Copy text</button></div>';
     h += '</div>';
   });
-  if (me && onlyMine && !shown) h += '<p class="note">No rehearsals for '+esc(me)+' yet.</p>';
+  if (me && onlyMine && !shown) h += '<p class="note">Nothing scheduled for '+esc(me)+' yet.</p>';
   return h;
 }
 function renderPeople(){
@@ -438,12 +470,12 @@ function renderPeople(){
 }
 function renderScenes(){
   const cov = coverage();
-  let h = '<h2>Scenes</h2><p class="note">Rehearsal minutes are estimates from the script length – adjust them and re-plan.</p>';
+  let h = '<h2>Scenes</h2><p class="note"></p>';
   state.scenes.forEach((s, i) => {
     const when = state.nights.filter(n => n.type==='rehearsal' && n.scenes.includes(s.id)).map(n => fmtDate(n.date));
-    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div><input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"'+(canEdit?'':' disabled')+'> <span class="wk">min</span></div>';
+    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div>'+(canEdit?'<input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"> <span class="wk">min</span>':'')+'</div>';
     h += '<div class="ppl">'+s.roles.map(r => { const a = (state.cast.find(c=>c.role===r)||{}).actor; return esc(r)+' <span style="color:var(--muted)">('+esc(a && a.trim() ? a : '?')+')</span>'; }).join(', ')+'</div>';
-    h += '<div class="ppl"><b>Rehearsed '+cov[s.id]+'×:</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
+    h += '<div class="ppl"><b>Rehearsed '+cov[s.id].full+'× full cast'+(cov[s.id].part?' + '+cov[s.id].part+'× with read-ins':'')+':</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
   });
   return h;
 }
@@ -452,8 +484,7 @@ function renderSetup(){
   if (live && !canEdit) return '<h2>Director sign-in</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">Everyone can view the schedule. Only the director can change it.</p><label class="f">Password</label><input type="password" id="pw" style="width:100%" autocomplete="current-password"><div class="bar" style="margin-top:10px"><button class="btn primary" id="pw-go">Sign in</button></div><div class="warn" id="pw-err" style="display:none"></div></div></div>';
   let top = live ? '<div class="card"><div class="cb" style="padding-top:10px;display:flex;align-items:center;gap:8px"><span style="flex:1">✅ Signed in as director – changes go live for everyone.</span><button class="btn small" id="pw-out">Sign out</button></div></div>' : '';
   let h = top + '<h2>Session</h2><div class="card"><div class="cb" style="padding-top:6px">';
-  h += '<label class="f">Start time</label><input type="time" id="s-start" value="'+st.startTime+'">';
-  h += '<label class="f">Session length (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
+  h += '<label class="f">Rough rehearsal length for planning (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
   h += '<label class="f">Rehearse each scene at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
   h += '<label class="f">Add an extra rehearsal date</label><input type="date" id="s-date"> <button class="btn small" id="s-adddate">Add</button>';
   h += '</div></div><h2>Cast</h2><div class="card"><div class="cb" style="padding-top:6px"><table>';
@@ -483,9 +514,9 @@ document.addEventListener('click', e => {
   if (d.wa) return copyText(whatsapp(state.nights[+d.wa]));
   if (d.rm) { const [i,k] = d.rm.split(':').map(Number); state.nights[i].scenes.splice(k,1); state.nights[i].locked = true; save(); render(); return; }
   if (d.away) { const n = state.nights[+d.away]; const a = d.a; if (effAway(n).includes(a)) { n.away = n.away.filter(x => x!==a); if (castSaid(n, a)) setCastAway(a, n.date, false); } else n.away = [...n.away, a]; save(); render(); return; }
-  if (b.id === 'x-add') { const v = $('#x-date').value, st = $('#x-start').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); state.nights.push({date:v,type:'rehearsal',away:[],scenes:[],locked:false,note:'',extra:true,start:st&&st!==state.settings.startTime?st:undefined}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Extra rehearsal added and schedule re-planned'); return; }
+  if (b.id === 'x-add') { const v = $('#x-date').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); state.nights.push({date:v,type:'rehearsal',venue:$('#x-venue').value.trim(),time:$('#x-time').value.trim(),label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Extra rehearsal added and schedule re-planned'); return; }
   if (d.del) { const n = state.nights[+d.del]; state.nights.splice(+d.del,1); openPanel=null; replan(); toast(fmtDate(n.date)+' removed'); return; }
-  if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
+  if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',venue:'',time:'7.30pm',label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
   if (b.id === 'b-copy') return copyText(JSON.stringify(state));
   if (b.id === 'b-paste') {
     const m = document.createElement('div'); m.className='modal';
@@ -510,8 +541,9 @@ document.addEventListener('change', e => {
   if (!canEdit) return;
   if (d.type) { const n = state.nights[+d.type]; n.type = el.value; if (n.type!=='rehearsal') n.scenes = []; save(); render(); toast('Re-plan to rebalance the other nights'); }
   else if (d.add) { if (el.value) { const n = state.nights[+d.add]; n.scenes.push(el.value); const order = state.scenes.map(s=>s.id); n.scenes.sort((a,b)=>order.indexOf(a)-order.indexOf(b)); n.locked = true; save(); render(); } }
-  else if (d.start) { state.nights[+d.start].start = el.value || undefined; save(); render(); }
-  else if (d.len) { state.nights[+d.len].mins = Math.max(30, +el.value||120); save(); render(); toast('Re-plan to use the new length'); }
+  else if (d.venue !== undefined) { state.nights[+d.venue].venue = el.value.trim(); save(); render(); }
+  else if (d.time !== undefined) { state.nights[+d.time].time = el.value.trim(); save(); render(); }
+  else if (d.label !== undefined) { state.nights[+d.label].label = el.value.trim(); save(); render(); }
   else if (d.note !== undefined) { state.nights[+d.note].note = el.value; save(); render(); }
   else if (d.mins) { state.scenes[+d.mins].mins = Math.max(5, +el.value||5); save(); render(); }
   else if (d.cast) { state.cast[+d.cast].actor = el.value; save(); }
