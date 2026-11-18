@@ -148,9 +148,10 @@ const DEFAULT_NIGHTS = [
   ['2027-01-30', HU, 'event', '2.30pm & 7pm', 'Two shows'],
   ['2027-01-31', HU, 'event', '11am–1pm', 'Break the set']
 ];
+const SCHEMA_V = 3;   // bump to replace the live schedule with new starting dates
 function defaultState() {
   return {
-    v: 2,
+    v: SCHEMA_V,
     settings: { sessionMins: 120, startTime: '19:30', minReps: 2, opening: '2027-01-29' },
     cast: DEFAULT_CAST.map(c => ({ ...c })),
     scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
@@ -267,7 +268,7 @@ const FIREBASE_CONFIG = {
 };
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
-const KEY = 'pib-rehearsal-v3';
+const KEY = 'pib-rehearsal-v4';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
@@ -313,8 +314,9 @@ function initLive(){
   docRef.onSnapshot(snap => {
     if (snap.metadata.hasPendingWrites) return;
     docExists = false; snapLoaded = true;
-    if (snap.exists) { try { const p = JSON.parse(snap.data().data); if (p.v === 2) { state = p; docExists = true; localStorage.setItem(KEY, snap.data().data); } } catch(e){} }
+    if (snap.exists) { try { const p = JSON.parse(snap.data().data); if (p.v === SCHEMA_V) { state = p; docExists = true; localStorage.setItem(KEY, snap.data().data); } } catch(e){} }
     maybeInit();
+    if (!docExists && !canEdit) { state = defaultState(); planInto(state); render(); }
     if (!(canEdit && openPanel !== null)) render();
   }, () => toast('Offline – showing last saved copy'));
   return true;
@@ -361,6 +363,11 @@ function coverage(){
   });
   return c;
 }
+function planInto(st){
+  st.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
+  const r = plan({ ...st, nights: st.nights.map(n => ({ ...n, away: effAway(n) })) });
+  r.nights.forEach((list, i) => { st.nights[i].scenes = st.nights[i].type === 'rehearsal' ? list : []; });
+}
 function replan(){
   state.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
   const r = plan({ ...state, nights: state.nights.map(n => ({ ...n, away: effAway(n) })) });
@@ -399,7 +406,7 @@ function renderSchedule(){
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
   if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input id="x-venue" list="venues" placeholder="Venue" style="width:130px"><input id="x-time" value="7.30pm" style="width:80px"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
   h += '<datalist id="venues">' + [...new Set(state.nights.map(n => n.venue).filter(Boolean))].map(v => '<option value="'+esc(v)+'">').join('') + '</datalist>';
-  if (live && !docExists) h += '<p class="note">The schedule hasn\'t been published yet.</p>';
+  if (live && !docExists && canEdit) h += '<p class="note">Publishing the new schedule…</p>';
   const people = allActors(state); if (me && !people.includes(me)) me = '';
   h += '<div class="card mebar"><div class="cb" style="padding-top:10px"><div class="bar" style="margin:0"><b>Me:</b><select id="me-sel"><option value="">Everyone</option>' + people.map(a => '<option'+(a===me?' selected':'')+'>'+esc(a)+'</option>').join('') + '</select>' + (me ? '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="me-only"'+(onlyMine?' checked':'')+' style="width:20px;height:20px"> Only show when I\'m needed</label>' : '') + '</div>';
   if (me) { const all = state.nights.filter(n => n.type !== 'cancelled'); const mine = all.filter(n => nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+all.length+' dates.</p>'; }
