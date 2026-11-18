@@ -128,7 +128,7 @@ function mondays(startISO, endISO) {
   return out;
 }
 // Thursday availability for the starting schedule: only these can make Thursdays
-const THURSDAY_AWAY = ['Beth', 'Niki', 'Stu', 'Ghost'];
+const THURSDAY_AWAY = ['Beth', 'Mary'];
 const PHIL_B_THURSDAYS_FROM = '2026-12-12';
 // Known one-off absences
 const DATE_AWAY = { '2026-12-03': ['Mel'], '2026-12-14': ['Mel'], '2027-01-07': ['Mel'] };
@@ -149,7 +149,7 @@ const DEFAULT_NIGHTS = [
   ['2027-01-30', HU, 'event', '2.30pm & 7pm', 'Two shows'],
   ['2027-01-31', HU, 'event', '11am–1pm', 'Break the set']
 ];
-const SCHEMA_V = 5;   // bump to replace the live schedule with new starting dates
+const SCHEMA_V = 6;   // bump to replace the live schedule with new starting dates
 function defaultState() {
   return {
     v: SCHEMA_V,
@@ -287,7 +287,7 @@ const FIREBASE_CONFIG = {
 };
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
-const KEY = 'pib-rehearsal-v6';
+const KEY = 'pib-rehearsal-v7';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
