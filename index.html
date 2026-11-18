@@ -148,7 +148,7 @@ const DEFAULT_NIGHTS = [
   ['2027-01-30', HU, 'event', '2.30pm & 7pm', 'Two shows'],
   ['2027-01-31', HU, 'event', '11am–1pm', 'Break the set']
 ];
-const SCHEMA_V = 3;   // bump to replace the live schedule with new starting dates
+const SCHEMA_V = 4;   // bump to replace the live schedule with new starting dates
 function defaultState() {
   return {
     v: SCHEMA_V,
@@ -179,82 +179,100 @@ function plan(state, opts = {}) {
   const sceneIdx = Object.fromEntries(S.map((s, i) => [s.id, i]));
   const free = []; // night indexes the planner may fill
   N.forEach((n, i) => { if (n.type === 'rehearsal' && !n.locked) free.push(i); });
-  // fixed (locked) occurrences
   const fixed = N.map((n, i) => (n.type === 'rehearsal' && n.locked) ? n.scenes.filter(id => id in sceneIdx).map(id => sceneIdx[id]) : []);
-  const slots = [];
-  S.forEach((s, si) => {
-    const have = fixed.reduce((a, l) => a + l.filter(x => x === si).length, 0);
-    for (let k = have; k < R; k++) slots.push(si);
-  });
-  if (!free.length || !slots.length) return { nights: N.map(n => n.scenes.slice()), cost: 0, issues: [] };
   const away = N.map(n => new Set(n.away));
-  const W = { called: 3, missing: 400, over: 20, dup: 1000, gap: 15, early: 0.5, inv: 12, empty: 40, load: 0.04 };
+  const capOf = ni => N[ni].mins || cap;
+  const miss = (si, ni) => sceneActors[si].filter(a => away[ni].has(a)).length;
+  const usable = (si, ni) => { const m = miss(si, ni); return m <= 2 && sceneActors[si].length - m >= 2 && m < sceneActors[si].length - m; };
+  const fixedCount = S.map((_, si) => fixed.reduce((a, l) => a + l.filter(x => x === si).length, 0));
+  const fixedFull = S.map((_, si) => fixed.reduce((a, l, ni) => a + l.filter(x => x === si && miss(si, ni) === 0).length, 0));
+  if (!free.length) return { nights: N.map(n => n.scenes.slice()), cost: 0 };
+  const W = { over: 5000, dup: 5000, short: 3000, unusable: 2000, missing: 40, called: 2, gap: 15, early: 0.3, inv: 10, spread: 60 };
 
-  function cost(assign) {
-    const per = N.map((_, i) => fixed[i].slice());
-    assign.forEach((ni, k) => per[ni].push(slots[k]));
-    let c = 0;
-    const occ = S.map(() => []);
-    per.forEach((list, ni) => {
-      if (N[ni].type !== 'rehearsal') return;
-      const seen = new Set(); let mins = 0; const called = new Set();
-      list.forEach(si => {
-        if (seen.has(si)) c += W.dup; seen.add(si);
-        mins += S[si].mins; occ[si].push(ni);
-        sceneActors[si].forEach(a => { called.add(a); if (away[ni].has(a)) c += W.missing; });
+  function anneal(slots) {
+    let hard = 0;
+    function cost(assign) {
+      hard = 0;
+      const per = N.map((_, i) => fixed[i].slice());
+      assign.forEach((ni, k) => per[ni].push(slots[k]));
+      let c = 0;
+      const occ = S.map(() => []), full = fixedFull.slice();
+      per.forEach((list, ni) => {
+        if (N[ni].type !== 'rehearsal' || !list.length) return;
+        const seen = new Set(); let mins = 0; const called = new Set();
+        list.forEach(si => {
+          if (seen.has(si)) { c += W.dup; hard++; } seen.add(si);
+          mins += S[si].mins; occ[si].push(ni);
+          const m = miss(si, ni);
+          if (!N[ni].locked) { if (m === 0) full[si]++; else if (!usable(si, ni)) { c += W.unusable; hard++; } }
+          c += W.missing * m;
+          sceneActors[si].forEach(a => called.add(a));
+        });
+        if (mins > capOf(ni)) { c += W.over * (mins - capOf(ni)); hard++; }
+        c += W.called * called.size;
       });
-      const capN = N[ni].mins || cap;
-      if (mins > capN) c += W.over * (mins - capN);
-      if (!list.length) c += W.empty;
-      c += W.called * called.size + W.load * mins * mins / capN;
-    });
-    const first = occ.map(l => l.length ? Math.min(...l) : 99);
-    for (let i = 0; i < first.length; i++) for (let j = i + 1; j < first.length; j++) if (first[j] < first[i]) c += W.inv;
-    occ.forEach((list, si) => {
-      list.sort((a, b) => a - b);
-      if (list.length) c += W.early * list[0];
-      for (let j = 1; j < list.length; j++) if (list[j] - list[j - 1] < 2) c += W.gap * (2 - (list[j] - list[j - 1]));
-    });
-    return c;
-  }
-  let best = null, bestC = Infinity;
-  const restarts = opts.restarts || 6, iters = opts.iters || 25000;
-  for (let r = 0; r < restarts; r++) {
-    const rand = rng(1234 + r * 7919);
-    let cur = slots.map(() => free[Math.floor(rand() * free.length)]);
-    let cc = cost(cur);
-    let T = 40;
-    for (let it = 0; it < iters; it++) {
-      const next = cur.slice();
-      if (rand() < 0.7) next[Math.floor(rand() * next.length)] = free[Math.floor(rand() * free.length)];
-      else { const a = Math.floor(rand() * next.length), b = Math.floor(rand() * next.length); [next[a], next[b]] = [next[b], next[a]]; }
-      const nc = cost(next);
-      if (nc <= cc || rand() < Math.exp((cc - nc) / T)) { cur = next; cc = nc; }
-      T = Math.max(0.05, T * 0.9996);
-      if (cc < bestC) { bestC = cc; best = cur.slice(); }
+      full.forEach(f => { if (f < R) { c += W.short * (R - f); hard++; } });
+      const first = occ.map(l => l.length ? Math.min(...l) : 99);
+      for (let i = 0; i < first.length; i++) for (let j = i + 1; j < first.length; j++) if (first[j] < first[i]) c += W.inv;
+      occ.forEach(list => {
+        list.sort((a, b) => a - b);
+        if (list.length) c += W.early * list[0];
+        for (let j = 1; j < list.length; j++) { const g = list[j] - list[j - 1]; if (g < 3) c += W.gap * (3 - g); }
+      });
+      return c;
     }
+    let best = null, bestC = Infinity, bestHard = 0;
+    const restarts = opts.restarts || 4, iters = opts.iters || 20000;
+    for (let r = 0; r < restarts; r++) {
+      const rand = rng(1234 + r * 7919);
+      let cur = slots.map(() => free[Math.floor(rand() * free.length)]);
+      let cc = cost(cur), T = 60;
+      for (let it = 0; it < iters; it++) {
+        const next = cur.slice();
+        if (rand() < 0.7) next[Math.floor(rand() * next.length)] = free[Math.floor(rand() * free.length)];
+        else { const a = Math.floor(rand() * next.length), b = Math.floor(rand() * next.length); [next[a], next[b]] = [next[b], next[a]]; }
+        const nc = cost(next);
+        if (nc <= cc || rand() < Math.exp((cc - nc) / T)) { cur = next; cc = nc; }
+        T = Math.max(0.05, T * 0.9995);
+        if (cc < bestC) { bestC = cc; best = cur.slice(); cost(best); bestHard = hard; }
+      }
+    }
+    return { best, bestC, hard: bestHard };
+  }
+
+  // Try the highest even number of rehearsals per scene that fits, then step down.
+  const capacity = free.reduce((a, ni) => a + capOf(ni), 0);
+  const needFor = T => S.reduce((a, s, si) => a + s.mins * Math.max(0, T - fixedCount[si]), 0);
+  let T = R; while (needFor(T + 1) <= capacity * 0.9) T++;
+  let chosen = null;
+  for (; T >= R; T--) {
+    const slots = []; S.forEach((s, si) => { for (let k = fixedCount[si]; k < T; k++) slots.push(si); });
+    const res = anneal(slots); res.slots = slots;
+    chosen = res;
+    if (res.hard === 0) break;   // no overruns, no double-booking, enough full-cast rehearsals
   }
   const result = N.map((n, i) => (n.type === 'rehearsal' && n.locked) ? n.scenes.slice() : []);
-  best.forEach((ni, k) => result[ni].push(S[slots[k]].id));
+  chosen.best.forEach((ni, k) => result[ni].push(S[chosen.slots[k]].id));
+  // Top up spare time with the least-rehearsed scenes that can be done that night.
   const reps = Object.fromEntries(S.map(sc => [sc.id, 0]));
   result.forEach(l => l.forEach(id => reps[id]++));
-  free.forEach(ni => {
-    const capN = N[ni].mins || cap;
-    let mins = result[ni].reduce((t, id) => t + S[sceneIdx[id]].mins, 0);
-    if (mins >= capN * 0.65) return;
-    const cands = S.map((sc, si) => {
-      const miss = sceneActors[si].filter(a => away[ni].has(a)).length;
-      return { sc, miss, present: sceneActors[si].length - miss };
-    }).filter(c => c.present >= 2 && c.miss <= 2 && c.miss < c.present);
-    while (true) {
-      const pick = cands.filter(c => !result[ni].includes(c.sc.id) && mins + c.sc.mins <= capN)
-        .sort((x, y) => (x.miss - y.miss) || (reps[x.sc.id] - reps[y.sc.id]) || (x.sc.mins - y.sc.mins))[0];
-      if (!pick) break;
-      result[ni].push(pick.sc.id); reps[pick.sc.id]++; mins += pick.sc.mins;
-    }
-  });
+  const used = ni => result[ni].reduce((t, id) => t + S[sceneIdx[id]].mins, 0);
+  while (true) {
+    let best = null;
+    free.forEach(ni => {
+      const spare = capOf(ni) - used(ni);
+      S.forEach((sc, si) => {
+        if (result[ni].includes(sc.id) || reps[sc.id] > T + 1 || sc.mins > spare || !usable(si, ni)) return;
+        const near = result.some((l, k) => l.includes(sc.id) && Math.abs(k - ni) < 2) ? 1 : 0;
+        const key = [reps[sc.id], near, miss(si, ni), -spare];
+        if (!best || key.some((v, x) => v !== best.key[x]) && key.find((v, x) => v !== best.key[x]) < best.key[key.findIndex((v, x) => v !== best.key[x])]) best = { ni, sc, key };
+      });
+    });
+    if (!best) break;
+    result[best.ni].push(best.sc.id); reps[best.sc.id]++;
+  }
   result.forEach(list => list.sort((a, b) => sceneIdx[a] - sceneIdx[b]));
-  return { nights: result, cost: bestC };
+  return { nights: result, cost: chosen.bestC, perScene: T };
 }
 // ---------- app ----------
 // ===== LIVE SETTINGS – paste your Firebase details here =====
@@ -268,7 +286,7 @@ const FIREBASE_CONFIG = {
 };
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
-const KEY = 'pib-rehearsal-v4';
+const KEY = 'pib-rehearsal-v5';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
