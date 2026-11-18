@@ -30,6 +30,7 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .mine{background:#fff4d6;border:1px solid var(--gold);border-radius:8px;padding:7px 10px;font-weight:600;margin:2px 0 6px}
 .mine{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .mine.away{background:#fdecea;border-color:#f3b8b3;color:var(--bad)}
+.changes{border-color:var(--gold);background:#fffaf0}.changes ul{margin:6px 0 10px;padding-left:18px}.changes li{margin:3px 0}.changes li.no{color:var(--bad)}.changes li.ok{color:var(--ok)}
 .mine.off{background:#e5f2ea;border-color:#bfe0cb;color:var(--ok)}
 .sc.me .n b{color:var(--plum)}.sc.me{background:#fffaf0}
 .sc.notme{opacity:.5}
@@ -293,10 +294,13 @@ try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me ||
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
 let castAway = {};   // { name: [dates] } – absences the cast enter themselves
 const awayKey = name => name.replace(/[^A-Za-z0-9]/g, '_');
-function effAway(n){ const s = new Set(n.away); Object.entries(castAway).forEach(([name, dates]) => { if (dates.includes(n.date)) s.add(name); }); return [...s]; }
-function castSaid(n, a){ return (castAway[a] || []).includes(n.date); }
+// Cast entries: 'YYYY-MM-DD' = can't make it, '+YYYY-MM-DD' = can make it after all
+function effAway(n){ const s = new Set(n.away); Object.entries(castAway).forEach(([name, dates]) => { if (dates.includes(n.date)) s.add(name); if (dates.includes('+' + n.date)) s.delete(name); }); return [...s]; }
+function castSaid(n, a){ const l = castAway[a] || []; return l.includes(n.date) || l.includes('+' + n.date); }
 async function setCastAway(name, date, away){
-  const list = new Set(castAway[name] || []); away ? list.add(date) : list.delete(date);
+  const list = new Set(castAway[name] || []); list.delete(date); list.delete('+' + date);
+  const night = state.nights.find(x => x.date === date), dirAway = night && night.away.includes(name);
+  if (away && !dirAway) list.add(date); if (!away && dirAway) list.add('+' + date);
   castAway[name] = [...list].sort(); render();
   if (!live) { try { localStorage.setItem('pib-castaway', JSON.stringify(castAway)); } catch(e){} return; }
   try {
@@ -387,7 +391,24 @@ function planInto(st){
   const r = plan({ ...st, nights: st.nights.map(n => ({ ...n, away: effAway(n) })) });
   r.nights.forEach((list, i) => { st.nights[i].scenes = st.nights[i].type === 'rehearsal' ? list : []; });
 }
+function castChanges(){
+  const seen = state.seenCast || {}, out = [];
+  const names = new Set([...Object.keys(seen), ...Object.keys(castAway)]);
+  names.forEach(name => {
+    const a = new Set(seen[name] || []), b = new Set(castAway[name] || []);
+    b.forEach(x => { if (!a.has(x)) out.push({ name, x, added: true }); });
+    a.forEach(x => { if (!b.has(x)) out.push({ name, x, added: false }); });
+  });
+  return out.map(c => {
+    const plus = c.x[0] === '+', date = plus ? c.x.slice(1) : c.x;
+    if (date < today || !state.nights.some(n => n.date === date)) return null;
+    const can = plus ? c.added : !c.added;
+    return { date, text: c.name + (can ? ' can now make ' : ' can\'t make ') + fmtDate(date), can };
+  }).filter(Boolean).sort((p, q) => p.date < q.date ? -1 : 1);
+}
+function markSeen(){ state.seenCast = JSON.parse(JSON.stringify(castAway)); }
 function replan(){
+  markSeen();
   state.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
   const r = plan({ ...state, nights: state.nights.map(n => ({ ...n, away: effAway(n) })) });
   r.nights.forEach((list, i) => { if (state.nights[i].type === 'rehearsal') state.nights[i].scenes = list; else state.nights[i].scenes = []; });
@@ -423,6 +444,10 @@ function showModal(text){
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
+  if (canEdit) {
+    const ch = castChanges();
+    if (ch.length) h += '<div class="card changes"><div class="cb" style="padding-top:10px"><b>🔔 Changes since you last looked ('+ch.length+')</b><ul>' + ch.map(c => '<li class="'+(c.can?'ok':'no')+'">'+esc(c.text)+'</li>').join('') + '</ul><div class="bar" style="margin:0"><button class="btn small primary" id="replan2">⟳ Re-plan with these</button><button class="btn small" id="seen">Mark as seen</button></div></div></div>';
+  }
   if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input id="x-venue" list="venues" placeholder="Venue" style="width:130px"><input id="x-time" value="7.30pm" style="width:80px"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
   h += '<datalist id="venues">' + [...new Set(state.nights.map(n => n.venue).filter(Boolean))].map(v => '<option value="'+esc(v)+'">').join('') + '</datalist>';
   if (live && !docExists && canEdit) h += '<p class="note">Publishing the new schedule…</p>';
@@ -445,7 +470,7 @@ function renderSchedule(){
     if (me && n.type !== 'cancelled') {
       const iAmAway = aw.includes(me);
       h += '<div class="mine'+(iAmAway?' away':needed?'':' off')+'"><span>'+(iAmAway ? '✕ '+esc(me)+' – can\'t make it' : needed ? '⭐ '+esc(me)+' – needed' : esc(me)+' – night off')+'</span>';
-      if (!past && (!iAmAway || castSaid(n, me))) h += '<button class="btn small" data-cant="'+i+'">'+(iAmAway ? 'I can make it now' : 'Can\'t make it')+'</button>';
+      if (!past) h += '<button class="btn small" data-cant="'+i+'">'+(iAmAway ? 'I can make it now' : 'Can\'t make it')+'</button>';
       h += '</div>';
     }
     if (n.note) h += '<div class="ppl" style="margin:0 0 6px"><b>Note:</b> '+esc(n.note)+'</div>';
@@ -537,12 +562,16 @@ document.addEventListener('click', e => {
   if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
   if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
   if (!canEdit) return;
-  if (b.id === 'replan') return replan();
+  if (b.id === 'replan' || b.id === 'replan2') return replan();
+  if (b.id === 'seen') { markSeen(); save(); render(); toast('Marked as seen'); return; }
   if (d.lock) { const n = state.nights[+d.lock]; n.locked = !n.locked; save(); render(); return; }
   if (d.edit) { openPanel = openPanel === +d.edit ? null : +d.edit; render(); return; }
   if (d.wa) return copyText(whatsapp(state.nights[+d.wa]));
   if (d.rm) { const [i,k] = d.rm.split(':').map(Number); state.nights[i].scenes.splice(k,1); state.nights[i].locked = true; save(); render(); return; }
-  if (d.away) { const n = state.nights[+d.away]; const a = d.a; if (effAway(n).includes(a)) { n.away = n.away.filter(x => x!==a); if (castSaid(n, a)) setCastAway(a, n.date, false); } else n.away = [...n.away, a]; save(); render(); return; }
+  if (d.away) { const n = state.nights[+d.away]; const a = d.a; const nowAway = !effAway(n).includes(a);
+    n.away = nowAway ? [...new Set([...n.away, a])] : n.away.filter(x => x!==a);
+    if (castSaid(n, a)) { const l = (castAway[a] || []).filter(x => x !== n.date && x !== '+' + n.date); castAway[a] = l; if (live) firebase.firestore().collection('panto_away').doc(awayKey(a)).set({ name: a, dates: l, updated: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{}); }
+    save(); render(); return; }
   if (b.id === 'x-add') { const v = $('#x-date').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); state.nights.push({date:v,type:'rehearsal',venue:$('#x-venue').value.trim(),time:$('#x-time').value.trim(),label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Extra rehearsal added and schedule re-planned'); return; }
   if (d.del) { const n = state.nights[+d.del]; state.nights.splice(+d.del,1); openPanel=null; replan(); toast(fmtDate(n.date)+' removed'); return; }
   if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',venue:'',time:'7.30pm',label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
