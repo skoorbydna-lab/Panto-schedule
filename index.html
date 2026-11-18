@@ -128,7 +128,9 @@ function mondays(startISO, endISO) {
   return out;
 }
 // Thursday availability for the starting schedule: only these can make Thursdays
-const THURSDAY_AWAY = ['Phil R', 'Mel', 'Beth', 'Niki', 'Phil B', 'Ghost'];
+const THURSDAY_AWAY = ['Beth', 'Niki', 'Phil B', 'Ghost'];
+// Known one-off absences
+const DATE_AWAY = { '2026-12-03': ['Mel'], '2026-12-14': ['Mel'], '2027-01-07': ['Mel'] };
 const BB = 'Brass Button', BR = 'The Bridge', HU = 'Hulland';
 const DEFAULT_NIGHTS = [
   ['2026-11-23', BB, 'rehearsal', '7.30pm', '', 'AGM first', ['a1s1', 'a1s3']],
@@ -154,7 +156,7 @@ function defaultState() {
     scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
     nights: DEFAULT_NIGHTS.map(([date, venue, type = 'rehearsal', time = '7.30pm', label = '', note = '', scenes]) => {
       const thu = new Date(date + 'T12:00:00Z').getUTCDay() === 4 && type === 'rehearsal';
-      return { date, venue, type, time, label, note, away: thu ? [...THURSDAY_AWAY] : [], scenes: scenes ? [...scenes] : [], locked: !!scenes };
+      return { date, venue, type, time, label, note, away: [...new Set([...(thu ? THURSDAY_AWAY : []), ...(DATE_AWAY[date] || [])])], scenes: scenes ? [...scenes] : [], locked: !!scenes };
     })
   };
 }
@@ -236,8 +238,9 @@ function plan(state, opts = {}) {
   const reps = Object.fromEntries(S.map(sc => [sc.id, 0]));
   result.forEach(l => l.forEach(id => reps[id]++));
   free.forEach(ni => {
-    if (result[ni].length) return;
-    const capN = N[ni].mins || cap; let mins = 0;
+    const capN = N[ni].mins || cap;
+    let mins = result[ni].reduce((t, id) => t + S[sceneIdx[id]].mins, 0);
+    if (mins >= capN * 0.65) return;
     const cands = S.map((sc, si) => {
       const miss = sceneActors[si].filter(a => away[ni].has(a)).length;
       return { sc, miss, present: sceneActors[si].length - miss };
