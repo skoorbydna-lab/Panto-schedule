@@ -136,7 +136,7 @@ const DEFAULT_NIGHTS = [
   ['2026-11-30', BB], ['2026-12-03', BR], ['2026-12-07', BB], ['2026-12-10', BR],
   ['2026-12-14', BB], ['2026-12-17', BR],
   ['2027-01-04', BB], ['2027-01-07', BR], ['2027-01-11', BB], ['2027-01-14', BR],
-  ['2027-01-18', BB], ['2027-01-21', BB],
+  ['2027-01-18', BB, 'run', '7.30pm', 'Full run'], ['2027-01-21', BB],
   ['2027-01-24', HU, 'event', '10am–2pm', 'Set up'],
   ['2027-01-25', HU, 'event', '6–10pm', 'Tech / bits'],
   ['2027-01-26', HU, 'run', '6–10pm', 'Tech / full run'],
@@ -185,7 +185,7 @@ function plan(state, opts = {}) {
   });
   if (!free.length || !slots.length) return { nights: N.map(n => n.scenes.slice()), cost: 0, issues: [] };
   const away = N.map(n => new Set(n.away));
-  const W = { called: 3, missing: 60, over: 20, dup: 1000, gap: 15, early: 0.5, inv: 12, empty: 40, load: 0.04 };
+  const W = { called: 3, missing: 400, over: 20, dup: 1000, gap: 15, early: 0.5, inv: 12, empty: 40, load: 0.04 };
 
   function cost(assign) {
     const per = N.map((_, i) => fixed[i].slice());
