@@ -128,7 +128,8 @@ function mondays(startISO, endISO) {
   return out;
 }
 // Thursday availability for the starting schedule: only these can make Thursdays
-const THURSDAY_AWAY = ['Beth', 'Niki', 'Phil B', 'Ghost'];
+const THURSDAY_AWAY = ['Beth', 'Niki', 'Stu', 'Ghost'];
+const PHIL_B_THURSDAYS_FROM = '2026-12-12';
 // Known one-off absences
 const DATE_AWAY = { '2026-12-03': ['Mel'], '2026-12-14': ['Mel'], '2027-01-07': ['Mel'] };
 const BB = 'Brass Button', BR = 'The Bridge', HU = 'Hulland';
@@ -148,7 +149,7 @@ const DEFAULT_NIGHTS = [
   ['2027-01-30', HU, 'event', '2.30pm & 7pm', 'Two shows'],
   ['2027-01-31', HU, 'event', '11am–1pm', 'Break the set']
 ];
-const SCHEMA_V = 4;   // bump to replace the live schedule with new starting dates
+const SCHEMA_V = 5;   // bump to replace the live schedule with new starting dates
 function defaultState() {
   return {
     v: SCHEMA_V,
@@ -157,7 +158,7 @@ function defaultState() {
     scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
     nights: DEFAULT_NIGHTS.map(([date, venue, type = 'rehearsal', time = '7.30pm', label = '', note = '', scenes]) => {
       const thu = new Date(date + 'T12:00:00Z').getUTCDay() === 4 && type === 'rehearsal';
-      return { date, venue, type, time, label, note, away: [...new Set([...(thu ? THURSDAY_AWAY : []), ...(DATE_AWAY[date] || [])])], scenes: scenes ? [...scenes] : [], locked: !!scenes };
+      return { date, venue, type, time, label, note, away: [...new Set([...(thu ? THURSDAY_AWAY : []), ...(thu && date < PHIL_B_THURSDAYS_FROM ? ['Phil B'] : []), ...(DATE_AWAY[date] || [])])], scenes: scenes ? [...scenes] : [], locked: !!scenes };
     })
   };
 }
@@ -286,7 +287,7 @@ const FIREBASE_CONFIG = {
 };
 const DIRECTOR_EMAIL = 'director@peaklandplayers.panto';  // made-up account; the director only types the password
 // =============================================================
-const KEY = 'pib-rehearsal-v5';
+const KEY = 'pib-rehearsal-v6';
 let me = '', onlyMine = false;
 try { const m = JSON.parse(localStorage.getItem('pib-me') || '{}'); me = m.me || ''; onlyMine = !!m.only; } catch(e){}
 function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, only: onlyMine })); } catch(e){} }
