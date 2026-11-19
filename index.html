@@ -32,6 +32,8 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .mine.away{background:#fdecea;border-color:#f3b8b3;color:var(--bad)}
 .changes{border-color:var(--gold);background:#fffaf0}.changes ul{margin:6px 0 10px;padding-left:18px}.changes li{margin:3px 0}.changes li.no{color:var(--bad)}.changes li.ok{color:var(--ok)}
 .days{display:flex;gap:4px}.days button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;font:600 12px Inter;cursor:pointer}.days button.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.replanned{border-color:#7aa7d9;background:#f2f7fd}.card.changed{border:2px solid #7aa7d9}.chg{background:#7aa7d9;color:#fff;font-size:11px;font-weight:700;padding:3px 14px;letter-spacing:.3px;text-transform:uppercase}
+.newtag{background:#2f7d4f;color:#fff;border-radius:6px;padding:1px 6px;font-size:10.5px;font-weight:700;vertical-align:middle}.removed{color:var(--muted)}.removed b{color:var(--bad)}
 .mine.off{background:#e5f2ea;border-color:#bfe0cb;color:var(--ok)}
 .sc.me .n b{color:var(--plum)}.sc.me{background:#fffaf0}
 .sc.notme{opacity:.5}
@@ -191,7 +193,9 @@ function plan(state, opts = {}) {
   const fixedCount = S.map((_, si) => fixed.reduce((a, l) => a + l.filter(x => x === si).length, 0));
   const fixedFull = S.map((_, si) => fixed.reduce((a, l, ni) => a + l.filter(x => x === si && miss(si, ni) === 0).length, 0));
   if (!free.length || !S.length) return { nights: N.map(n => n.type === 'rehearsal' ? n.scenes.filter(id => id in sceneIdx) : []), cost: 0 };
-  const W = { over: 5000, dup: 5000, short: 3000, unusable: 2000, missing: 40, called: 2, gap: 15, early: 0.3, inv: 10, spread: 60 };
+  const prevSet = N.map((n, i) => free.includes(i) ? new Set((n.scenes || []).filter(id => id in sceneIdx).map(id => sceneIdx[id])) : new Set());
+  const prevMiss = N.map((n, ni) => { const o = {}; prevSet[ni].forEach(si => o[si] = sceneActors[si].filter(a => (n.prevAway || []).includes(a)).length); return o; });
+  const W = { keep: 35, over: 5000, dup: 5000, short: 3000, unusable: 2000, missing: 40, called: 2, gap: 15, early: 0.3, inv: 10, spread: 60 };
 
   function anneal(slots) {
     let hard = 0;
@@ -208,6 +212,7 @@ function plan(state, opts = {}) {
           if (seen.has(si)) { c += W.dup; hard++; } seen.add(si);
           mins += S[si].mins; occ[si].push(ni);
           const m = miss(si, ni);
+          if (prevSet[ni].has(si) && m <= (prevMiss[ni][si] || 0)) c -= W.keep;
           if (!N[ni].locked) { if (m === 0) full[si]++; else if (!usable(si, ni)) { c += W.unusable; hard++; } }
           c += W.missing * m;
           sceneActors[si].forEach(a => called.add(a));
@@ -229,7 +234,8 @@ function plan(state, opts = {}) {
     const restarts = opts.restarts || 4, iters = opts.iters || 20000;
     for (let r = 0; r < restarts; r++) {
       const rand = rng(1234 + r * 7919);
-      let cur = slots.map(() => free[Math.floor(rand() * free.length)]);
+      const pool = prevSet.map(s => new Set(s));
+      let cur = slots.map(si => { const k = free.find(ni => pool[ni].has(si)); if (k !== undefined) { pool[k].delete(si); return k; } return free[Math.floor(rand() * free.length)]; });
       let cc = cost(cur), T = 60;
       for (let it = 0; it < iters; it++) {
         const next = cur.slice();
@@ -248,6 +254,7 @@ function plan(state, opts = {}) {
   const capacity = free.reduce((a, ni) => a + capOf(ni), 0);
   const needFor = T => S.reduce((a, s, si) => a + s.mins * Math.max(0, T - fixedCount[si]), 0);
   let T = R; while (needFor(T + 1) <= capacity * 0.9) T++;
+  const topCap = T + 1;
   let chosen = null;
   for (; T >= R; T--) {
     const slots = []; S.forEach((s, si) => { for (let k = fixedCount[si]; k < T; k++) slots.push(si); });
@@ -266,9 +273,9 @@ function plan(state, opts = {}) {
     free.forEach(ni => {
       const spare = capOf(ni) - used(ni);
       S.forEach((sc, si) => {
-        if (result[ni].includes(sc.id) || reps[sc.id] > T + 1 || sc.mins > spare || !usable(si, ni)) return;
+        if (result[ni].includes(sc.id) || reps[sc.id] > topCap || sc.mins > spare || !usable(si, ni)) return;
         const near = result.some((l, k) => l.includes(sc.id) && Math.abs(k - ni) < 2) ? 1 : 0;
-        const key = [reps[sc.id], near, miss(si, ni), -spare];
+        const key = [prevSet[ni].has(si) ? 0 : 1, reps[sc.id], near, miss(si, ni), -spare];
         if (!best || key.some((v, x) => v !== best.key[x]) && key.find((v, x) => v !== best.key[x]) < best.key[key.findIndex((v, x) => v !== best.key[x])]) best = { ni, sc, key };
       });
     });
@@ -426,10 +433,19 @@ function castChanges(){
 function markSeen(){ state.seenCast = JSON.parse(JSON.stringify(castAway)); }
 function replan(){
   markSeen();
+  const snap = state.nights.map(n => ({ date: n.date, scenes: n.scenes.slice(), locked: !!n.locked }));
   state.nights.forEach(n => { if (n.date < today && n.type === 'rehearsal') n.locked = true; });
-  const r = plan({ ...state, nights: state.nights.map(n => ({ ...n, away: effAway(n) })) });
-  r.nights.forEach((list, i) => { if (state.nights[i].type === 'rehearsal') state.nights[i].scenes = list; else state.nights[i].scenes = []; });
-  save(); render(); toast('Schedule re-planned');
+  const r = plan({ ...state, nights: state.nights.map(n => ({ ...n, away: effAway(n), prevAway: n.plannedAway || n.away })) });
+  r.nights.forEach((list, i) => { const n = state.nights[i]; n.scenes = n.type === 'rehearsal' ? list : []; n.plannedAway = effAway(n); });
+  const changed = state.nights.filter(n => { const o = snap.find(x => x.date === n.date); return o && o.scenes.join() !== n.scenes.join(); }).length;
+  if (changed && snap.some(x => x.scenes.length && !x.locked)) state.lastPlan = { at: Date.now(), nights: snap };
+  save(); render(); toast(changed ? 'Schedule re-planned – ' + changed + ' night' + (changed === 1 ? '' : 's') + ' changed' : 'Re-planned – nothing needed to change');
+}
+function prevScenes(n){ const lp = state.lastPlan; if (!lp) return null; const o = lp.nights.find(x => x.date === n.date); return o ? o.scenes : null; }
+function undoPlan(){
+  const lp = state.lastPlan; if (!lp) return;
+  state.nights.forEach(n => { const o = lp.nights.find(x => x.date === n.date); if (o) { n.scenes = o.scenes.slice(); n.locked = o.locked; } });
+  state.lastPlan = null; save(); render(); toast('Back to the previous schedule');
 }
 function whatsapp(n){
   const info = nightInfo(n);
@@ -507,6 +523,10 @@ function exportCalendar(){
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
+  if (canEdit && state.lastPlan) {
+    const nCh = state.nights.filter(n => { const p = prevScenes(n); return p && p.join() !== n.scenes.join(); }).length;
+    h += '<div class="card replanned"><div class="cb" style="padding-top:10px"><b>⟳ Re-planned '+new Date(state.lastPlan.at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b><p class="note" style="margin:4px 0 8px">'+nCh+' night'+(nCh===1?'':'s')+' changed – marked below. <span class="newtag">New</span> scenes were added; removed ones are listed under each night.</p><div class="bar" style="margin:0"><button class="btn small" id="undo">↶ Undo – go back</button><button class="btn small primary" id="keep">Keep changes</button></div></div></div>';
+  }
   if (canEdit) {
     const ch = castChanges();
     if (ch.length) h += '<div class="card changes"><div class="cb" style="padding-top:10px"><b>🔔 Changes since you last looked ('+ch.length+')</b><ul>' + ch.map(c => '<li class="'+(c.can?'ok':'no')+'">'+esc(c.text)+'</li>').join('') + '</ul><div class="bar" style="margin:0"><button class="btn small primary" id="replan2">⟳ Re-plan with these</button><button class="btn small" id="seen">Mark as seen</button></div></div></div>';
@@ -527,7 +547,8 @@ function renderSchedule(){
     if (me && onlyMine && (!needed || n.type === 'cancelled')) return;
     shown++;
     const tagCls = n.type==='run' || n.type==='event' ? 'run' : n.type==='cancelled' ? 'off' : '';
-    h += '<div class="card'+(past?' past':'')+'"><div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div>'+(whereWhen(n) ? '<div class="wk">📍 '+esc(whereWhen(n))+'</div>' : '')+'</div>';
+    const prev = canEdit && n.type === 'rehearsal' ? prevScenes(n) : null, diff = prev && prev.join() !== n.scenes.join();
+    h += '<div class="card'+(past?' past':'')+(diff?' changed':'')+'">'+(diff?'<div class="chg">Changed in re-plan</div>':'')+'<div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div>'+(whereWhen(n) ? '<div class="wk">📍 '+esc(whereWhen(n))+'</div>' : '')+'</div>';
     h += '<span class="tag '+tagCls+'">'+esc(tagText(n))+'</span>';
     if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
@@ -541,8 +562,9 @@ function renderSchedule(){
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">Scenes to be confirmed.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc([it.s.place, it.actors.join(', ')].filter(Boolean).join(' · '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
+        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b>'+(diff && !prev.includes(it.s.id) ? ' <span class="newtag">New</span>' : '')+'<small>'+esc([it.s.place, it.actors.join(', ')].filter(Boolean).join(' · '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
+      if (diff) { const gone = prev.filter(id => !n.scenes.includes(id)).map(id => (sceneById(id) || {}).name).filter(Boolean); if (gone.length) h += '<div class="ppl removed"><b>Removed:</b> '+esc(gone.join(', '))+'</div>'; }
     } else if (n.type !== 'cancelled') h += '<p class="note" style="margin:4px 0">Everyone called.</p>';
     if (n.type==='rehearsal' && info.items.length) {
       h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+info.called.map(a => aw.includes(a) ? '<s style="color:var(--bad)">'+esc(a)+'</s>' : esc(a)).join(', ')+'</div>';
@@ -681,6 +703,8 @@ document.addEventListener('click', e => {
   if (b.id === 'pw-go') return signIn();
   if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
   if (b.id === 'cal') return exportCalendar();
+  if (b.id === 'undo') return confirmBox('Go back to the schedule from before the last re-plan?', 'Undo', undoPlan);
+  if (b.id === 'keep') { state.lastPlan = null; save(); render(); toast('Changes kept'); return; }
   if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
   if (!canEdit) return;
   if (b.id === 'replan' || b.id === 'replan2') return replan();
