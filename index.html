@@ -62,6 +62,7 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .panel{padding:10px 14px;border-top:1px solid var(--line);background:#fcfaf7;font-size:13px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
 .chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font:500 13px Inter;cursor:pointer}
+.chips button.in{background:var(--plum);border-color:var(--plum);color:#fff}
 .chips button.away{background:var(--bad);border-color:var(--bad);color:#fff;text-decoration:line-through}
 select,input,textarea{font:14px Inter;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:#fff;color:var(--ink)}
 label.f{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:600}
@@ -153,7 +154,7 @@ const DEFAULT_NIGHTS = [
 const SCHEMA_V = 7;   // bump to replace the live schedule with new starting dates
 function defaultState() {
   return {
-    v: SCHEMA_V,
+    v: SCHEMA_V, title: 'Puss in Boots', group: 'Peakland Players',
     settings: { sessionMins: 120, startTime: '19:30', minReps: 2, opening: '2027-01-29' },
     cast: DEFAULT_CAST.map(c => ({ ...c })),
     scenes: DEFAULT_SCENES.map(s => ({ ...s, roles: [...s.roles] })),
@@ -188,7 +189,7 @@ function plan(state, opts = {}) {
   const usable = (si, ni) => { const m = miss(si, ni); return m <= 2 && sceneActors[si].length - m >= 2 && m < sceneActors[si].length - m; };
   const fixedCount = S.map((_, si) => fixed.reduce((a, l) => a + l.filter(x => x === si).length, 0));
   const fixedFull = S.map((_, si) => fixed.reduce((a, l, ni) => a + l.filter(x => x === si && miss(si, ni) === 0).length, 0));
-  if (!free.length) return { nights: N.map(n => n.scenes.slice()), cost: 0 };
+  if (!free.length || !S.length) return { nights: N.map(n => n.type === 'rehearsal' ? n.scenes.filter(id => id in sceneIdx) : []), cost: 0 };
   const W = { over: 5000, dup: 5000, short: 3000, unusable: 2000, missing: 40, called: 2, gap: 15, early: 0.3, inv: 10, spread: 60 };
 
   function anneal(slots) {
@@ -416,7 +417,7 @@ function replan(){
 }
 function whatsapp(n){
   const info = nightInfo(n);
-  let t = '🎭 *Puss in Boots – ' + fmtDate(n.date, true) + '*\n';
+  let t = '🎭 *' + (state.title || 'Puss in Boots') + ' – ' + fmtDate(n.date, true) + '*\n';
   if (whereWhen(n)) t += '📍 ' + whereWhen(n) + '\n';
   if (n.type !== 'rehearsal' || n.label) t += '*' + tagText(n) + '*\n';
   if (n.type === 'cancelled') return t + (n.note ? '\n' + n.note : '');
@@ -448,7 +449,7 @@ function renderSchedule(){
     const ch = castChanges();
     if (ch.length) h += '<div class="card changes"><div class="cb" style="padding-top:10px"><b>🔔 Changes since you last looked ('+ch.length+')</b><ul>' + ch.map(c => '<li class="'+(c.can?'ok':'no')+'">'+esc(c.text)+'</li>').join('') + '</ul><div class="bar" style="margin:0"><button class="btn small primary" id="replan2">⟳ Re-plan with these</button><button class="btn small" id="seen">Mark as seen</button></div></div></div>';
   }
-  if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add an extra rehearsal</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><input id="x-venue" list="venues" placeholder="Venue" style="width:130px"><input id="x-time" value="7.30pm" style="width:80px"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
+  if (canEdit) h += '<div class="card"><div class="cb" style="padding-top:10px"><b>Add a date</b><div class="bar" style="margin:8px 0 0"><input type="date" id="x-date"><select id="x-type"><option value="rehearsal">Rehearsal</option><option value="run">Full / dress run</option><option value="event">Show / set up / other</option></select><input id="x-label" placeholder="Label (optional)" style="width:130px"></div><div class="bar" style="margin:6px 0 0"><input id="x-venue" list="venues" placeholder="Venue" style="width:130px"><input id="x-time" value="7.30pm" style="width:80px"><button class="btn small primary" id="x-add">Add</button></div></div></div>';
   h += '<datalist id="venues">' + [...new Set(state.nights.map(n => n.venue).filter(Boolean))].map(v => '<option value="'+esc(v)+'">').join('') + '</datalist>';
   if (live && !docExists && canEdit) h += '<p class="note">Publishing the new schedule…</p>';
   const people = allActors(state); if (me && !people.includes(me)) me = '';
@@ -477,7 +478,7 @@ function renderSchedule(){
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">Scenes to be confirmed.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc(it.s.place)+' · '+esc(it.actors.join(', '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
+        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b><small>'+esc([it.s.place, it.actors.join(', ')].filter(Boolean).join(' · '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
     } else if (n.type !== 'cancelled') h += '<p class="note" style="margin:4px 0">Everyone called.</p>';
     if (n.type==='rehearsal' && info.items.length) {
@@ -524,31 +525,79 @@ function renderPeople(){
 }
 function renderScenes(){
   const cov = coverage();
-  let h = '<h2>Scenes</h2><p class="note"></p>';
+  let h = '<h2>Scenes</h2>';
+  if (canEdit) h += '<p class="note">Tap a character to add or remove them from a scene. Length is a rough guide used to fit scenes into a 2-hour rehearsal.</p>';
   state.scenes.forEach((s, i) => {
     const when = state.nights.filter(n => n.type==='rehearsal' && n.scenes.includes(s.id)).map(n => fmtDate(n.date));
-    h += '<div class="card"><div class="cb" style="padding-top:12px"><div style="display:flex;gap:8px;align-items:center"><div style="flex:1"><b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place)+'</div></div>'+(canEdit?'<input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:70px"> <span class="wk">min</span>':'')+'</div>';
-    h += '<div class="ppl">'+s.roles.map(r => { const a = (state.cast.find(c=>c.role===r)||{}).actor; return esc(r)+' <span style="color:var(--muted)">('+esc(a && a.trim() ? a : '?')+')</span>'; }).join(', ')+'</div>';
-    h += '<div class="ppl"><b>Rehearsed '+cov[s.id].full+'× full cast'+(cov[s.id].part?' + '+cov[s.id].part+'× with read-ins':'')+':</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
+    const c = cov[s.id] || { full: 0, part: 0 };
+    h += '<div class="card"><div class="cb" style="padding-top:12px">';
+    if (canEdit) {
+      h += '<div class="bar" style="margin:0"><input data-sname="'+i+'" value="'+esc(s.name)+'" style="flex:1;font-weight:600"><input type="number" min="5" step="5" value="'+s.mins+'" data-mins="'+i+'" style="width:64px"><span class="wk">min</span></div>';
+      h += '<input data-splace="'+i+'" value="'+esc(s.place||'')+'" placeholder="Setting, e.g. The palace" style="width:100%;margin-top:6px">';
+      h += '<div class="chips" style="margin-top:8px">' + state.cast.map(cc => '<button data-srole="'+i+'" data-r="'+esc(cc.role)+'" class="'+(s.roles.includes(cc.role)?'in':'')+'">'+esc(cc.role)+'</button>').join('') + '</div>';
+      h += '<div class="bar" style="margin:0">'+(i>0?'<button class="btn small" data-sup="'+i+'">↑ Move up</button>':'')+'<button class="btn small" style="color:var(--bad)" data-sdel="'+i+'">Delete scene</button></div>';
+    } else {
+      h += '<b>'+esc(s.name)+'</b><div class="wk">'+esc(s.place||'')+'</div>';
+      h += '<div class="ppl">'+s.roles.map(r => { const a = (state.cast.find(x=>x.role===r)||{}).actor; return esc(r)+' <span style="color:var(--muted)">('+esc(a && a.trim() ? a : '?')+')</span>'; }).join(', ')+'</div>';
+    }
+    h += '<div class="ppl"><b>Rehearsed '+c.full+'× full cast'+(c.part?' + '+c.part+'× with read-ins':'')+':</b> '+(when.join(', ')||'not yet')+'</div></div></div>';
   });
+  if (canEdit) h += '<button class="btn primary" id="s-addscene">+ Add a scene</button>';
+  if (!state.scenes.length && !canEdit) h += '<p class="note">No scenes yet.</p>';
   return h;
 }
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function renderSetup(){
   const st = state.settings;
   if (live && !canEdit) return '<h2>Director sign-in</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">Everyone can view the schedule. Only the director can change it.</p><label class="f">Password</label><input type="password" id="pw" style="width:100%" autocomplete="current-password"><div class="bar" style="margin-top:10px"><button class="btn primary" id="pw-go">Sign in</button></div><div class="warn" id="pw-err" style="display:none"></div></div></div>';
-  let top = live ? '<div class="card"><div class="cb" style="padding-top:10px;display:flex;align-items:center;gap:8px"><span style="flex:1">✅ Signed in as director – changes go live for everyone.</span><button class="btn small" id="pw-out">Sign out</button></div></div>' : '';
-  let h = top + '<h2>Session</h2><div class="card"><div class="cb" style="padding-top:6px">';
-  h += '<label class="f">Rough rehearsal length for planning (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
-  h += '<label class="f">Rehearse each scene at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
-  h += '<label class="f">Add an extra rehearsal date</label><input type="date" id="s-date"> <button class="btn small" id="s-adddate">Add</button>';
-  h += '</div></div><h2>Cast</h2><div class="card"><div class="cb" style="padding-top:6px"><table>';
-  state.cast.forEach((c, i) => { h += '<tr><td>'+esc(c.role)+'</td><td><input data-cast="'+i+'" value="'+esc(c.actor)+'" placeholder="?" style="width:100%"></td></tr>'; });
-  h += '</table><p class="note">Give two roles the same name if one person doubles.</p></div></div>';
-  h += '<h2>Backup</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">The schedule is saved in this browser only. Copy a backup now and then (e.g. into a WhatsApp chat to yourself) – paste it back to restore or move to another phone.</p><div class="bar"><button class="btn" id="b-copy">Copy backup</button><button class="btn" id="b-paste">Restore from backup</button><button class="btn ghost" id="b-reset" style="color:var(--bad)">Reset everything</button></div></div></div>';
+  let h = live ? '<div class="card"><div class="cb" style="padding-top:10px;display:flex;align-items:center;gap:8px"><span style="flex:1">✅ Signed in as director – changes go live for everyone.</span><button class="btn small" id="pw-out">Sign out</button></div></div>' : '';
+  // Production
+  h += '<h2>Production</h2><div class="card"><div class="cb" style="padding-top:6px">';
+  h += '<label class="f">Production name</label><input id="p-title" value="'+esc(state.title || 'Puss in Boots')+'" style="width:100%">';
+  h += '<label class="f">Group name</label><input id="p-group" value="'+esc(state.group || 'Peakland Players')+'" style="width:100%">';
+  h += '<label class="f">Opening night</label><input type="date" id="p-open" value="'+esc(st.opening||'')+'">';
+  h += '</div></div>';
+  // Rehearsal dates generator
+  const g = st.gen || { start: today, end: st.opening || '', days: { 1: { on: true, venue: '', time: '7.30pm' } } };
+  h += '<h2>Rehearsal dates</h2><div class="card"><div class="cb" style="padding-top:6px"><p class="note">Pick the weekdays you rehearse, with the usual venue and time for each. This replaces the ordinary rehearsals between the two dates. Runs, set up, shows and other special dates are kept.</p>';
+  h += '<div class="bar"><label class="f" style="margin:0">From</label><input type="date" id="g-start" value="'+esc(g.start||'')+'"><label class="f" style="margin:0">to</label><input type="date" id="g-end" value="'+esc(g.end||'')+'"></div><table>';
+  [1,2,3,4,5,6,0].forEach(d => { const x = g.days[d] || {}; h += '<tr><td><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-gday="'+d+'"'+(x.on?' checked':'')+' style="width:18px;height:18px"> '+DAYS[d]+'</label></td><td><input data-gvenue="'+d+'" value="'+esc(x.venue||'')+'" list="venues" placeholder="Venue" style="width:100%"></td><td><input data-gtime="'+d+'" value="'+esc(x.time||'7.30pm')+'" style="width:80px"></td></tr>'; });
+  h += '</table><datalist id="venues">' + [...new Set(state.nights.map(n => n.venue).filter(Boolean))].map(v => '<option value="'+esc(v)+'">').join('') + '</datalist>';
+  h += '<div class="bar" style="margin-top:10px"><button class="btn primary" id="g-go">Create rehearsal dates</button></div></div></div>';
+  // Characters and cast
+  h += '<h2>Characters and cast</h2><div class="card"><div class="cb" style="padding-top:6px"><table><tr><th>Character</th><th>Played by</th><th></th></tr>';
+  state.cast.forEach((c, i) => { h += '<tr><td><input data-role="'+i+'" value="'+esc(c.role)+'" style="width:100%"></td><td><input data-cast="'+i+'" value="'+esc(c.actor)+'" placeholder="?" style="width:100%"></td><td><button class="x" data-cdel="'+i+'" title="Remove character">×</button></td></tr>'; });
+  h += '</table><div class="bar" style="margin-top:8px"><button class="btn small" id="c-add">+ Add a character</button></div><p class="note">Give two characters the same actor if one person doubles. Choose which characters are in each scene on the Scenes tab.</p></div></div>';
+  // Planning
+  h += '<h2>Planning</h2><div class="card"><div class="cb" style="padding-top:6px">';
+  h += '<label class="f">Rehearsal length for planning (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
+  h += '<label class="f">Rehearse each scene with its full cast at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
+  h += '</div></div>';
+  // Backup / new
+  h += '<h2>Backup and new production</h2><div class="card"><div class="cb" style="padding-top:10px"><p class="note">Copy a backup now and then (e.g. into a WhatsApp chat to yourself) – paste it back to restore.</p><div class="bar"><button class="btn" id="b-copy">Copy backup</button><button class="btn" id="b-paste">Restore from backup</button></div>';
+  h += '<p class="note" style="margin-top:12px">Starting a new production clears the dates, characters, cast and scenes. Copy a backup first if you want to keep this one.</p><div class="bar"><button class="btn" id="b-new" style="color:var(--bad)">Start a new production</button></div></div></div>';
   return h;
 }
+function confirmBox(msg, okText, fn){
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = '<div class="box"><p>'+msg+'</p><div class="bar"><button class="btn" style="background:var(--bad);color:#fff;border-color:var(--bad)" id="cf-ok">'+esc(okText)+'</button><button class="btn" id="cf-no">Cancel</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#cf-no').onclick = () => m.remove();
+  m.querySelector('#cf-ok').onclick = () => { m.remove(); fn(); };
+}
+function readGen(){
+  const g = { start: $('#g-start').value, end: $('#g-end').value, days: {} };
+  document.querySelectorAll('[data-gday]').forEach(cb => { const d = cb.dataset.gday; g.days[d] = { on: cb.checked, venue: $('[data-gvenue="'+d+'"]').value.trim(), time: $('[data-gtime="'+d+'"]').value.trim() }; });
+  return g;
+}
+function generateDates(g){
+  const out = []; let d = new Date(g.start + 'T12:00:00Z'); const end = new Date(g.end + 'T12:00:00Z');
+  while (d <= end) { const x = g.days[d.getUTCDay()]; if (x && x.on && d.toISOString().slice(0,10) >= today) out.push({ date: d.toISOString().slice(0,10), venue: x.venue, time: x.time }); d = new Date(d.getTime() + 864e5); }
+  return out;
+}
 function render(){
-  $('#count').textContent = 'Opening night: ' + fmtDate(state.settings.opening, true) + ' · ' + Math.max(0, Math.ceil((new Date(state.settings.opening) - new Date(today))/864e5)) + ' days to go';
+  const ttl = state.title || 'Puss in Boots'; document.querySelector('header h1').textContent = ttl; document.querySelector('header .sub').textContent = (state.group || 'Peakland Players') + ' · Rehearsal planner'; document.title = ttl + ' – Rehearsal Planner';
+  $('#count').textContent = state.settings.opening ? 'Opening night: ' + fmtDate(state.settings.opening, true) + ' · ' + Math.max(0, Math.ceil((new Date(state.settings.opening) - new Date(today))/864e5)) + ' days to go' : 'Opening night not set';
   const setupBtn = document.querySelector('nav button[data-t="setup"]'); if (setupBtn) setupBtn.textContent = (live && !canEdit) ? 'Director' : 'Setup';
   if (live) $('#count').textContent += canEdit ? ' · ✏️ Editing' : ' · 🔴 Live';
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
@@ -572,7 +621,7 @@ document.addEventListener('click', e => {
     n.away = nowAway ? [...new Set([...n.away, a])] : n.away.filter(x => x!==a);
     if (castSaid(n, a)) { const l = (castAway[a] || []).filter(x => x !== n.date && x !== '+' + n.date); castAway[a] = l; if (live) firebase.firestore().collection('panto_away').doc(awayKey(a)).set({ name: a, dates: l, updated: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{}); }
     save(); render(); return; }
-  if (b.id === 'x-add') { const v = $('#x-date').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); state.nights.push({date:v,type:'rehearsal',venue:$('#x-venue').value.trim(),time:$('#x-time').value.trim(),label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Extra rehearsal added and schedule re-planned'); return; }
+  if (b.id === 'x-add') { const v = $('#x-date').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); const ty = $('#x-type').value; state.nights.push({date:v,type:ty,venue:$('#x-venue').value.trim(),time:$('#x-time').value.trim(),label:$('#x-label').value.trim(),away:[],scenes:[],locked:false,note:'',extra:ty==='rehearsal'}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Date added'); return; }
   if (d.del) { const n = state.nights[+d.del]; state.nights.splice(+d.del,1); openPanel=null; replan(); toast(fmtDate(n.date)+' removed'); return; }
   if (b.id === 's-adddate') { const v = $('#s-date').value; if (v && !state.nights.some(n=>n.date===v)) { state.nights.push({date:v,type:'rehearsal',venue:'',time:'7.30pm',label:'',away:[],scenes:[],locked:false,note:'',extra:true}); state.nights.sort((a,b)=>a.date<b.date?-1:1); save(); toast('Date added – re-plan to use it'); render(); } return; }
   if (b.id === 'b-copy') return copyText(JSON.stringify(state));
@@ -584,6 +633,27 @@ document.addEventListener('click', e => {
     m.querySelector('#r-ok').onclick = () => { try { const s = JSON.parse(m.querySelector('textarea').value); if(!s.nights||!s.scenes) throw 0; state = s; save(); m.remove(); render(); toast('Restored'); } catch(err){ const x = m.querySelector('#r-err'); x.style.display='block'; x.textContent='That doesn\'t look like a backup.'; } };
     return;
   }
+  if (b.id === 'g-go') {
+    const g = readGen(); state.settings.gen = g;
+    if (!g.start || !g.end || g.end < g.start) return toast('Choose a start and end date');
+    const dates = generateDates(g); if (!dates.length) return toast('Tick at least one weekday');
+    const n0 = state.nights.filter(n => n.type === 'rehearsal' && n.date >= g.start && n.date <= g.end && n.date >= today).length;
+    return confirmBox('Create '+dates.length+' rehearsal dates from '+fmtDate(g.start)+' to '+fmtDate(g.end)+'?'+(n0 ? ' This replaces the '+n0+' ordinary rehearsals already in that period.' : ''), 'Create dates', () => {
+      state.nights = state.nights.filter(n => !(n.type === 'rehearsal' && n.date >= g.start && n.date <= g.end && n.date >= today));
+      dates.forEach(x => { if (!state.nights.some(n => n.date === x.date)) state.nights.push({ date: x.date, type: 'rehearsal', venue: x.venue, time: x.time, label: '', note: '', away: [], scenes: [], locked: false }); });
+      state.nights.sort((a, b) => a.date < b.date ? -1 : 1); tab = 'schedule'; replan(); toast(dates.length + ' rehearsal dates created');
+    });
+  }
+  if (b.id === 'c-add') { let k = state.cast.length + 1; while (state.cast.some(c => c.role === 'Character ' + k)) k++; state.cast.push({ role: 'Character ' + k, actor: '' }); save(); render(); return; }
+  if (d.cdel) { const c = state.cast[+d.cdel]; return confirmBox('Remove '+esc(c.role)+(c.actor ? ' ('+esc(c.actor)+')' : '')+' from the production and from every scene?', 'Remove', () => { state.cast.splice(+d.cdel, 1); state.scenes.forEach(s => s.roles = s.roles.filter(r => r !== c.role)); save(); render(); }); }
+  if (b.id === 's-addscene') { const id = 'sc' + Date.now().toString(36); state.scenes.push({ id, name: 'New scene', place: '', mins: 20, roles: [] }); save(); render(); setTimeout(() => { const el = document.querySelector('[data-sname="'+(state.scenes.length-1)+'"]'); if (el) { el.focus(); el.select(); } }, 50); return; }
+  if (d.srole) { const s = state.scenes[+d.srole], r = d.r; s.roles = s.roles.includes(r) ? s.roles.filter(x => x !== r) : [...s.roles, r]; save(); render(); return; }
+  if (d.sup) { const i = +d.sup; [state.scenes[i-1], state.scenes[i]] = [state.scenes[i], state.scenes[i-1]]; save(); render(); return; }
+  if (d.sdel) { const s = state.scenes[+d.sdel]; return confirmBox('Delete '+esc(s.name)+'? It will be taken off every rehearsal.', 'Delete', () => { state.scenes.splice(+d.sdel, 1); state.nights.forEach(n => n.scenes = n.scenes.filter(x => x !== s.id)); save(); render(); }); }
+  if (b.id === 'b-new') return confirmBox('Start a new production? This clears all dates, characters, cast and scenes for everyone.', 'Start new', () => {
+    state = { v: SCHEMA_V, title: 'New production', group: state.group || 'Peakland Players', settings: { sessionMins: state.settings.sessionMins || 120, startTime: '19:30', minReps: 2, opening: '' }, cast: [], scenes: [], nights: [], seenCast: JSON.parse(JSON.stringify(castAway)) };
+    save(); tab = 'setup'; render(); toast('New production started – fill in the details below');
+  });
   if (b.id === 'b-reset') {
     const m = document.createElement('div'); m.className='modal';
     m.innerHTML = '<div class="box"><p>Reset all dates, absences and edits back to the start?</p><div class="bar"><button class="btn" style="background:var(--bad);color:#fff;border-color:var(--bad)" id="x-ok">Reset</button><button class="btn" id="x-no">Cancel</button></div></div>';
@@ -604,7 +674,14 @@ document.addEventListener('change', e => {
   else if (d.label !== undefined) { state.nights[+d.label].label = el.value.trim(); save(); render(); }
   else if (d.note !== undefined) { state.nights[+d.note].note = el.value; save(); render(); }
   else if (d.mins) { state.scenes[+d.mins].mins = Math.max(5, +el.value||5); save(); render(); }
-  else if (d.cast) { state.cast[+d.cast].actor = el.value; save(); }
+  else if (d.cast) { state.cast[+d.cast].actor = el.value.trim(); save(); }
+  else if (d.role) { const c = state.cast[+d.role], old = c.role, nw = el.value.trim(); if (!nw || (nw !== old && state.cast.some(x => x.role === nw))) { toast(nw ? 'There is already a character called ' + nw : 'Give the character a name'); el.value = old; return; } c.role = nw; state.scenes.forEach(s => s.roles = s.roles.map(r => r === old ? nw : r)); save(); }
+  else if (d.sname !== undefined) { state.scenes[+d.sname].name = el.value.trim() || 'Untitled scene'; save(); }
+  else if (d.splace !== undefined) { state.scenes[+d.splace].place = el.value.trim(); save(); }
+  else if (el.id === 'p-title') { state.title = el.value.trim() || 'Untitled production'; save(); render(); }
+  else if (el.id === 'p-group') { state.group = el.value.trim(); save(); render(); }
+  else if (el.id === 'p-open') { state.settings.opening = el.value; save(); render(); }
+  else if (d.gday !== undefined || d.gvenue !== undefined || d.gtime !== undefined || el.id === 'g-start' || el.id === 'g-end') { state.settings.gen = readGen(); save(); }
   else if (el.id === 's-start') { state.settings.startTime = el.value || '19:30'; save(); }
   else if (el.id === 's-len') { state.settings.sessionMins = Math.max(30, +el.value||120); save(); }
   else if (el.id === 's-reps') { state.settings.minReps = +el.value; save(); toast('Re-plan to apply'); }
