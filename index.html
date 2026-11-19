@@ -520,6 +520,38 @@ function exportCalendar(){
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(count + ' dates exported – open the file to add them');
 }
+// ---- cast: changes since this phone last looked ----
+const SEEN_KEY = 'pib-seen-schedule';
+function schedSnap(){ return { title: state.title || '', nights: state.nights.map(n => ({ date: n.date, type: n.type, venue: n.venue || '', time: n.time || '', label: n.label || '', scenes: n.scenes.slice() })) }; }
+function loadSeen(){ try { const x = JSON.parse(localStorage.getItem(SEEN_KEY) || 'null'); return x && x.title === (state.title || '') ? x : null; } catch(e){ return null; } }
+function storeSeen(){ try { localStorage.setItem(SEEN_KEY, JSON.stringify(schedSnap())); } catch(e){} }
+function viewerPrev(n){ const s = loadSeen(); if (!s) return null; const o = s.nights.find(x => x.date === n.date); return o || 'new'; }
+function viewerChanges(){
+  if (canEdit || (live && !docExists)) return [];
+  const seen = loadSeen(); if (!seen) { storeSeen(); return []; }
+  const out = [], meIn = (scenes) => scenes.some(id => { const sc = sceneById(id); return sc && actorsFor(state, sc).includes(me); });
+  state.nights.forEach(n => {
+    if (n.date < today) return;
+    const o = seen.nights.find(x => x.date === n.date), d = fmtDate(n.date);
+    if (!o) { out.push({ date: n.date, text: 'New date added: ' + d + (n.type !== 'rehearsal' || n.label ? ' (' + tagText(n) + ')' : '') }); return; }
+    if (o.type !== n.type || o.label !== n.label) out.push({ date: n.date, text: d + ' is now: ' + tagText(n) });
+    if (o.venue !== n.venue || o.time !== n.time) out.push({ date: n.date, text: d + ' is now ' + (whereWhen(n) || 'TBC') });
+    if (n.type === 'rehearsal' && o.scenes.join() !== n.scenes.join()) {
+      if (me) {
+        const was = meIn(o.scenes), now = meIn(n.scenes);
+        if (now && !was) out.push({ date: n.date, text: 'You\'re now needed on ' + d, me: true });
+        else if (was && !now) out.push({ date: n.date, text: 'You\'re no longer needed on ' + d + ' – night off', me: true });
+        else if (now) {
+          const mine = l => l.filter(id => { const sc = sceneById(id); return sc && actorsFor(state, sc).includes(me); });
+          const a = mine(n.scenes).filter(id => !o.scenes.includes(id)).map(id => '+ ' + sceneById(id).name), r = mine(o.scenes).filter(id => !n.scenes.includes(id)).map(id => '− ' + (sceneById(id) || {}).name);
+          if (a.length || r.length) out.push({ date: n.date, text: 'Your scenes on ' + d + ': ' + [...a, ...r].join(', '), me: true });
+        }
+      } else out.push({ date: n.date, text: 'Scenes changed on ' + d });
+    }
+  });
+  seen.nights.forEach(o => { if (o.date >= today && !state.nights.some(n => n.date === o.date)) out.push({ date: o.date, text: fmtDate(o.date) + ' has been removed' }); });
+  return out.sort((a, b) => a.date < b.date ? -1 : 1);
+}
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
@@ -539,6 +571,8 @@ function renderSchedule(){
   if (me) h += '<div class="bar" style="margin:8px 0 0"><button class="btn small primary" id="cal">📅 Add my dates to calendar</button></div>';
   if (me) { const all = state.nights.filter(n => n.type !== 'cancelled'); const mine = all.filter(n => nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+all.length+' dates.</p>'; }
   h += '</div></div>';
+  const vch = viewerChanges();
+  if (vch.length) h += '<div class="card changes"><div class="cb" style="padding-top:10px"><b>🔔 Changes since you last looked ('+vch.length+')</b><ul>' + vch.map(c => '<li'+(c.me?' class="ok" style="font-weight:600"':'')+'>'+esc(c.text)+'</li>').join('') + '</ul><div class="bar" style="margin:0"><button class="btn small primary" id="gotit">Got it</button></div></div></div>';
   if (!(me && onlyMine)) h += '<p class="note" style="margin:0 0 4px">Times each scene is rehearsed with its full cast (+ with read-ins):</p><div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id].full < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id].full+(cov[s.id].part ? ' (+'+cov[s.id].part+')' : '')+'</span>').join('') + '</div>';
   let shown = 0;
   state.nights.forEach((n, i) => {
@@ -547,8 +581,14 @@ function renderSchedule(){
     if (me && onlyMine && (!needed || n.type === 'cancelled')) return;
     shown++;
     const tagCls = n.type==='run' || n.type==='event' ? 'run' : n.type==='cancelled' ? 'off' : '';
-    const prev = canEdit && n.type === 'rehearsal' ? prevScenes(n) : null, diff = prev && prev.join() !== n.scenes.join();
-    h += '<div class="card'+(past?' past':'')+(diff?' changed':'')+'">'+(diff?'<div class="chg">Changed in re-plan</div>':'')+'<div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div>'+(whereWhen(n) ? '<div class="wk">📍 '+esc(whereWhen(n))+'</div>' : '')+'</div>';
+    let prev = null, diff = false, label = 'Changed in re-plan';
+    if (canEdit) { prev = n.type === 'rehearsal' ? prevScenes(n) : null; diff = !!prev && prev.join() !== n.scenes.join(); }
+    else if (vch.length && !past) {
+      const o = viewerPrev(n); label = 'Changed since you last looked';
+      if (o === 'new') { diff = true; label = 'New date'; }
+      else if (o) { prev = n.type === 'rehearsal' ? o.scenes : null; diff = o.type !== n.type || o.label !== n.label || o.venue !== n.venue || o.time !== n.time || (!!prev && prev.join() !== n.scenes.join()); }
+    }
+    h += '<div class="card'+(past?' past':'')+(diff?' changed':'')+'">'+(diff?'<div class="chg">'+label+'</div>':'')+'<div class="ch"><div><div class="date">'+fmtDate(n.date)+'</div>'+(whereWhen(n) ? '<div class="wk">📍 '+esc(whereWhen(n))+'</div>' : '')+'</div>';
     h += '<span class="tag '+tagCls+'">'+esc(tagText(n))+'</span>';
     if (n.type==='rehearsal' && canEdit) h += '<button class="lock'+(n.locked?' on':'')+'" data-lock="'+i+'" title="Pin this night so re-planning leaves it alone">📌</button>';
     h += '</div><div class="cb">';
@@ -562,9 +602,9 @@ function renderSchedule(){
     if (n.type==='rehearsal') {
       if (!info.items.length) h += '<p class="note">Scenes to be confirmed.</p>';
       info.items.forEach((it, k) => {
-        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b>'+(diff && !prev.includes(it.s.id) ? ' <span class="newtag">New</span>' : '')+'<small>'+esc([it.s.place, it.actors.join(', ')].filter(Boolean).join(' · '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
+        h += '<div class="sc'+(me && it.actors.includes(me) ? ' me' : (me ? ' notme' : ''))+'"><span class="n"><b>'+esc(it.s.name)+'</b>'+(diff && prev && !prev.includes(it.s.id) ? ' <span class="newtag">New</span>' : '')+'<small>'+esc([it.s.place, it.actors.join(', ')].filter(Boolean).join(' · '))+'</small>'+(it.missing.length ? '<small style="color:var(--bad)">Read-in for '+esc(it.missing.join(', '))+'</small>' : '')+'</span>'+(canEdit?'<button class="x" data-rm="'+i+':'+k+'" title="Remove">×</button>':'')+'</div>';
       });
-      if (diff) { const gone = prev.filter(id => !n.scenes.includes(id)).map(id => (sceneById(id) || {}).name).filter(Boolean); if (gone.length) h += '<div class="ppl removed"><b>Removed:</b> '+esc(gone.join(', '))+'</div>'; }
+      if (diff && prev) { const gone = prev.filter(id => !n.scenes.includes(id)).map(id => (sceneById(id) || {}).name).filter(Boolean); if (gone.length) h += '<div class="ppl removed"><b>Removed:</b> '+esc(gone.join(', '))+'</div>'; }
     } else if (n.type !== 'cancelled') h += '<p class="note" style="margin:4px 0">Everyone called.</p>';
     if (n.type==='rehearsal' && info.items.length) {
       h += '<div class="ppl"><b>Called ('+info.called.length+'):</b> '+info.called.map(a => aw.includes(a) ? '<s style="color:var(--bad)">'+esc(a)+'</s>' : esc(a)).join(', ')+'</div>';
@@ -704,6 +744,7 @@ document.addEventListener('click', e => {
   if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
   if (b.id === 'cal') return exportCalendar();
   if (b.id === 'undo') return confirmBox('Go back to the schedule from before the last re-plan?', 'Undo', undoPlan);
+  if (b.id === 'gotit') { storeSeen(); render(); toast('Thanks!'); return; }
   if (b.id === 'keep') { state.lastPlan = null; save(); render(); toast('Changes kept'); return; }
   if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
   if (!canEdit) return;
