@@ -31,6 +31,7 @@ main{max-width:760px;margin:0 auto;padding:12px 12px 80px}
 .mine{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .mine.away{background:#fdecea;border-color:#f3b8b3;color:var(--bad)}
 .changes{border-color:var(--gold);background:#fffaf0}.changes ul{margin:6px 0 10px;padding-left:18px}.changes li{margin:3px 0}.changes li.no{color:var(--bad)}.changes li.ok{color:var(--ok)}
+.days{display:flex;gap:4px}.days button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;font:600 12px Inter;cursor:pointer}.days button.on{background:var(--bad);border-color:var(--bad);color:#fff}
 .mine.off{background:#e5f2ea;border-color:#bfe0cb;color:var(--ok)}
 .sc.me .n b{color:var(--plum)}.sc.me{background:#fffaf0}
 .sc.notme{opacity:.5}
@@ -296,11 +297,26 @@ function saveMe(){ try { localStorage.setItem('pib-me', JSON.stringify({ me, onl
 let castAway = {};   // { name: [dates] } – absences the cast enter themselves
 const awayKey = name => name.replace(/[^A-Za-z0-9]/g, '_');
 // Cast entries: 'YYYY-MM-DD' = can't make it, '+YYYY-MM-DD' = can make it after all
-function effAway(n){ const s = new Set(n.away); Object.entries(castAway).forEach(([name, dates]) => { if (dates.includes(n.date)) s.add(name); if (dates.includes('+' + n.date)) s.delete(name); }); return [...s]; }
+// "Usually can't do": { name: { days: [0-6], until: 'YYYY-MM-DD' } } – applies to ordinary rehearsals only
+function usualAway(n, name){
+  const u = (state.usual || {})[name]; if (!u || n.type !== 'rehearsal' || (n.here || []).includes(name)) return false;
+  return u.days.includes(new Date(n.date + 'T12:00:00Z').getUTCDay()) && (!u.until || n.date < u.until);
+}
+function migrate(st){
+  if (!st || st.usual) return st;
+  st.usual = {};
+  if (typeof THURSDAY_AWAY !== 'undefined' && (st.title || 'Puss in Boots') === 'Puss in Boots') {
+    THURSDAY_AWAY.forEach(a => st.usual[a] = { days: [4], until: '' });
+    st.usual['Phil B'] = { days: [4], until: PHIL_B_THURSDAYS_FROM };
+    st.nights.forEach(n => { if (n.type === 'rehearsal' && new Date(n.date + 'T12:00:00Z').getUTCDay() === 4) n.away = n.away.filter(a => !(a in st.usual) || (a === 'Phil B' && n.date >= PHIL_B_THURSDAYS_FROM)); });
+  }
+  return st;
+}
+function effAway(n){ const s = new Set(n.away); allActors(state).forEach(a => { if (usualAway(n, a)) s.add(a); }); Object.entries(castAway).forEach(([name, dates]) => { if (dates.includes(n.date)) s.add(name); if (dates.includes('+' + n.date)) s.delete(name); }); return [...s]; }
 function castSaid(n, a){ const l = castAway[a] || []; return l.includes(n.date) || l.includes('+' + n.date); }
 async function setCastAway(name, date, away){
   const list = new Set(castAway[name] || []); list.delete(date); list.delete('+' + date);
-  const night = state.nights.find(x => x.date === date), dirAway = night && night.away.includes(name);
+  const night = state.nights.find(x => x.date === date), dirAway = night && (night.away.includes(name) || usualAway(night, name));
   if (away && !dirAway) list.add(date); if (!away && dirAway) list.add('+' + date);
   castAway[name] = [...list].sort(); render();
   if (!live) { try { localStorage.setItem('pib-castaway', JSON.stringify(castAway)); } catch(e){} return; }
@@ -338,15 +354,15 @@ function initLive(){
   docRef.onSnapshot(snap => {
     if (snap.metadata.hasPendingWrites) return;
     docExists = false; snapLoaded = true;
-    if (snap.exists) { try { const p = JSON.parse(snap.data().data); if (p.v === SCHEMA_V) { state = p; docExists = true; localStorage.setItem(KEY, snap.data().data); } } catch(e){} }
+    if (snap.exists) { try { const p = JSON.parse(snap.data().data); if (p.v === SCHEMA_V) { state = migrate(p); docExists = true; localStorage.setItem(KEY, snap.data().data); } } catch(e){} }
     maybeInit();
-    if (!docExists && !canEdit) { state = defaultState(); planInto(state); render(); }
+    if (!docExists && !canEdit) { state = migrate(defaultState()); planInto(state); render(); }
     if (!(canEdit && openPanel !== null)) render();
   }, () => toast('Offline – showing last saved copy'));
   return true;
 }
 let snapLoaded = false, initing = false;
-function maybeInit(){ if (canEdit && snapLoaded && !docExists && !initing) { initing = true; state = defaultState(); replan(); } }
+function maybeInit(){ if (canEdit && snapLoaded && !docExists && !initing) { initing = true; state = migrate(defaultState()); replan(); } }
 async function signIn(){
   const pw = $('#pw').value, err = $('#pw-err');
   try { await firebase.auth().signInWithEmailAndPassword(DIRECTOR_EMAIL, pw); tab = 'schedule'; toast('Signed in – you can edit'); }
@@ -569,6 +585,14 @@ function renderSetup(){
   state.cast.forEach((c, i) => { h += '<tr><td><input data-role="'+i+'" value="'+esc(c.role)+'" style="width:100%"></td><td><input data-cast="'+i+'" value="'+esc(c.actor)+'" placeholder="?" style="width:100%"></td><td><button class="x" data-cdel="'+i+'" title="Remove character">×</button></td></tr>'; });
   h += '</table><div class="bar" style="margin-top:8px"><button class="btn small" id="c-add">+ Add a character</button></div><p class="note">Give two characters the same actor if one person doubles. Choose which characters are in each scene on the Scenes tab.</p></div></div>';
   // Planning
+  // Usually can't do
+  const U = state.usual || {};
+  h += '<h2>Usually can\'t do</h2><div class="card"><div class="cb" style="padding-top:6px"><p class="note">Tap the days each person normally can\'t make. This applies to ordinary rehearsals only, not runs or shows. Add an end date if it stops, e.g. Phil B free on Thursdays from 12 Dec. Cast can still tap "I can make it now" on any night.</p><table>';
+  allActors(state).forEach(a => {
+    const u = U[a] || { days: [], until: '' };
+    h += '<tr><td><b>'+esc(a)+'</b></td><td><div class="days">' + [1,2,3,4,5,6,0].map(d => '<button data-ud="'+esc(a)+'" data-day="'+d+'" class="'+(u.days.includes(d)?'on':'')+'">'+DAYS[d][0]+'</button>').join('') + '</div>' + (u.days.length ? '<label class="wk" style="display:flex;gap:6px;align-items:center;margin-top:4px">until <input type="date" data-uu="'+esc(a)+'" value="'+esc(u.until||'')+'" style="padding:3px 5px;font-size:12px"></label>' : '') + '</td></tr>';
+  });
+  h += '</table></div></div>';
   h += '<h2>Planning</h2><div class="card"><div class="cb" style="padding-top:6px">';
   h += '<label class="f">Rehearsal length for planning (minutes)</label><input type="number" id="s-len" min="30" step="15" value="'+st.sessionMins+'">';
   h += '<label class="f">Rehearse each scene with its full cast at least</label><select id="s-reps">'+[1,2,3].map(x=>'<option'+(x===st.minReps?' selected':'')+'>'+x+'</option>').join('')+'</select> times';
@@ -619,6 +643,7 @@ document.addEventListener('click', e => {
   if (d.rm) { const [i,k] = d.rm.split(':').map(Number); state.nights[i].scenes.splice(k,1); state.nights[i].locked = true; save(); render(); return; }
   if (d.away) { const n = state.nights[+d.away]; const a = d.a; const nowAway = !effAway(n).includes(a);
     n.away = nowAway ? [...new Set([...n.away, a])] : n.away.filter(x => x!==a);
+    n.here = nowAway ? (n.here || []).filter(x => x !== a) : (usualAway(n, a) || (n.here || []).includes(a) ? [...new Set([...(n.here || []), a])] : (n.here || []));
     if (castSaid(n, a)) { const l = (castAway[a] || []).filter(x => x !== n.date && x !== '+' + n.date); castAway[a] = l; if (live) firebase.firestore().collection('panto_away').doc(awayKey(a)).set({ name: a, dates: l, updated: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{}); }
     save(); render(); return; }
   if (b.id === 'x-add') { const v = $('#x-date').value; if (!v) return toast('Pick a date first'); if (state.nights.some(n=>n.date===v)) return toast('That date is already in the schedule'); const ty = $('#x-type').value; state.nights.push({date:v,type:ty,venue:$('#x-venue').value.trim(),time:$('#x-time').value.trim(),label:$('#x-label').value.trim(),away:[],scenes:[],locked:false,note:'',extra:ty==='rehearsal'}); state.nights.sort((a,b)=>a.date<b.date?-1:1); openPanel=null; replan(); toast('Date added'); return; }
@@ -644,6 +669,7 @@ document.addEventListener('click', e => {
       state.nights.sort((a, b) => a.date < b.date ? -1 : 1); tab = 'schedule'; replan(); toast(dates.length + ' rehearsal dates created');
     });
   }
+  if (d.ud) { state.usual = state.usual || {}; const u = state.usual[d.ud] || { days: [], until: '' }; const day = +d.day; u.days = u.days.includes(day) ? u.days.filter(x => x !== day) : [...u.days, day]; if (u.days.length) state.usual[d.ud] = u; else delete state.usual[d.ud]; save(); render(); toast('Re-plan the schedule to use this'); return; }
   if (b.id === 'c-add') { let k = state.cast.length + 1; while (state.cast.some(c => c.role === 'Character ' + k)) k++; state.cast.push({ role: 'Character ' + k, actor: '' }); save(); render(); return; }
   if (d.cdel) { const c = state.cast[+d.cdel]; return confirmBox('Remove '+esc(c.role)+(c.actor ? ' ('+esc(c.actor)+')' : '')+' from the production and from every scene?', 'Remove', () => { state.cast.splice(+d.cdel, 1); state.scenes.forEach(s => s.roles = s.roles.filter(r => r !== c.role)); save(); render(); }); }
   if (b.id === 's-addscene') { const id = 'sc' + Date.now().toString(36); state.scenes.push({ id, name: 'New scene', place: '', mins: 20, roles: [] }); save(); render(); setTimeout(() => { const el = document.querySelector('[data-sname="'+(state.scenes.length-1)+'"]'); if (el) { el.focus(); el.select(); } }, 50); return; }
@@ -651,7 +677,7 @@ document.addEventListener('click', e => {
   if (d.sup) { const i = +d.sup; [state.scenes[i-1], state.scenes[i]] = [state.scenes[i], state.scenes[i-1]]; save(); render(); return; }
   if (d.sdel) { const s = state.scenes[+d.sdel]; return confirmBox('Delete '+esc(s.name)+'? It will be taken off every rehearsal.', 'Delete', () => { state.scenes.splice(+d.sdel, 1); state.nights.forEach(n => n.scenes = n.scenes.filter(x => x !== s.id)); save(); render(); }); }
   if (b.id === 'b-new') return confirmBox('Start a new production? This clears all dates, characters, cast and scenes for everyone.', 'Start new', () => {
-    state = { v: SCHEMA_V, title: 'New production', group: state.group || 'Peakland Players', settings: { sessionMins: state.settings.sessionMins || 120, startTime: '19:30', minReps: 2, opening: '' }, cast: [], scenes: [], nights: [], seenCast: JSON.parse(JSON.stringify(castAway)) };
+    state = { v: SCHEMA_V, title: 'New production', group: state.group || 'Peakland Players', settings: { sessionMins: state.settings.sessionMins || 120, startTime: '19:30', minReps: 2, opening: '' }, cast: [], scenes: [], nights: [], usual: {}, seenCast: JSON.parse(JSON.stringify(castAway)) };
     save(); tab = 'setup'; render(); toast('New production started – fill in the details below');
   });
   if (b.id === 'b-reset') {
@@ -659,7 +685,7 @@ document.addEventListener('click', e => {
     m.innerHTML = '<div class="box"><p>Reset all dates, absences and edits back to the start?</p><div class="bar"><button class="btn" style="background:var(--bad);color:#fff;border-color:var(--bad)" id="x-ok">Reset</button><button class="btn" id="x-no">Cancel</button></div></div>';
     document.body.appendChild(m);
     m.querySelector('#x-no').onclick = () => m.remove();
-    m.querySelector('#x-ok').onclick = () => { m.remove(); state = defaultState(); replan(); };
+    m.querySelector('#x-ok').onclick = () => { m.remove(); state = migrate(defaultState()); replan(); };
   }
 });
 document.addEventListener('change', e => {
@@ -674,7 +700,8 @@ document.addEventListener('change', e => {
   else if (d.label !== undefined) { state.nights[+d.label].label = el.value.trim(); save(); render(); }
   else if (d.note !== undefined) { state.nights[+d.note].note = el.value; save(); render(); }
   else if (d.mins) { state.scenes[+d.mins].mins = Math.max(5, +el.value||5); save(); render(); }
-  else if (d.cast) { state.cast[+d.cast].actor = el.value.trim(); save(); }
+  else if (d.uu !== undefined) { const u = (state.usual || {})[d.uu]; if (u) { u.until = el.value; save(); toast('Re-plan the schedule to use this'); } }
+  else if (d.cast) { const old = state.cast[+d.cast].actor, nw = el.value.trim(); state.cast[+d.cast].actor = nw; if (state.usual && state.usual[old] && nw && !allActors(state).includes(old)) { state.usual[nw] = state.usual[old]; delete state.usual[old]; } save(); }
   else if (d.role) { const c = state.cast[+d.role], old = c.role, nw = el.value.trim(); if (!nw || (nw !== old && state.cast.some(x => x.role === nw))) { toast(nw ? 'There is already a character called ' + nw : 'Give the character a name'); el.value = old; return; } c.role = nw; state.scenes.forEach(s => s.roles = s.roles.map(r => r === old ? nw : r)); save(); }
   else if (d.sname !== undefined) { state.scenes[+d.sname].name = el.value.trim() || 'Untitled scene'; save(); }
   else if (d.splace !== undefined) { state.scenes[+d.splace].place = el.value.trim(); save(); }
@@ -686,9 +713,9 @@ document.addEventListener('change', e => {
   else if (el.id === 's-len') { state.settings.sessionMins = Math.max(30, +el.value||120); save(); }
   else if (el.id === 's-reps') { state.settings.minReps = +el.value; save(); toast('Re-plan to apply'); }
 });
-state = load();
+state = migrate(load());
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pw') signIn(); });
-if (initLive()) { if (!state) state = defaultState(); render(); }
-else if (!state) { state = defaultState(); replan(); } else render();
+if (initLive()) { if (!state) state = migrate(defaultState()); render(); }
+else if (!state) { state = migrate(defaultState()); replan(); } else render();
 </script>
 </body></html>
