@@ -458,6 +458,52 @@ function showModal(text){
   m.querySelector('#m-done').onclick = () => m.remove(); m.onclick = e => { if(e.target===m) m.remove(); };
   document.body.appendChild(m);
 }
+// ---- calendar export ----
+function parseTimes(t, type){
+  const toks = []; const re = /(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm)?/gi; let m;
+  while ((m = re.exec(t || ''))) toks.push({ h: +m[1], m: +(m[2] || 0), ap: (m[3] || '').toLowerCase(), at: m.index });
+  const fix = (k, ap) => { let h = k.h % 12; if ((k.ap || ap) === 'pm') h += 12; if (!(k.ap || ap)) h = k.h < 8 ? k.h + 12 : k.h; return h * 60 + k.m; };
+  if (!toks.length) return [[19 * 60 + 30, 21 * 60 + 30]];
+  const isRange = toks.length >= 2 && /[–\-]|to/.test(t.slice(toks[0].at, toks[1].at + 1));
+  if (isRange) { const e = fix(toks[1]), st = fix(toks[0], toks[0].ap || toks[1].ap); return [[st, e > st ? e : st + 120]]; }
+  const len = type === 'event' || type === 'run' ? 180 : 120;
+  return toks.map(k => { const st = fix(k); return [st, st + len]; });
+}
+function icsDate(date, mins){ const h = Math.floor(mins / 60), m = mins % 60; return date.replace(/-/g, '') + 'T' + String(h).padStart(2, '0') + String(m).padStart(2, '0') + '00'; }
+function icsEsc(x){ return String(x).replace(/\\/g, '\\\\').replace(/[,;]/g, c => '\\' + c).replace(/\n/g, '\\n'); }
+function calendarFor(name){
+  const title = state.title || 'Puss in Boots';
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rehearsal Planner//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEsc(title + ' – ' + name)];
+  let count = 0;
+  state.nights.forEach(n => {
+    if (n.type === 'cancelled' || n.date < today) return;
+    const info = nightInfo(n);
+    if (!info.called.includes(name) || effAway(n).includes(name)) return;
+    const what = n.type === 'rehearsal' ? (n.label || 'Rehearsal') : tagText(n);
+    let desc = '';
+    if (n.type === 'rehearsal') desc = info.items.filter(it => it.actors.includes(name)).map(it => it.s.name).join('\n') || 'Scenes to be confirmed';
+    else desc = 'Everyone called';
+    if (n.note) desc += '\n\n' + n.note;
+    parseTimes(n.time, n.type).forEach(([a, b], k) => {
+      count++;
+      L.push('BEGIN:VEVENT', 'UID:' + n.date + '-' + k + '-' + awayKey(name) + '@rehearsal-planner', 'DTSTAMP:' + stamp,
+        'DTSTART:' + icsDate(n.date, a), 'DTEND:' + icsDate(n.date, Math.min(b, 23 * 60 + 59)),
+        'SUMMARY:' + icsEsc(title + ' – ' + what), 'LOCATION:' + icsEsc(n.venue || ''), 'DESCRIPTION:' + icsEsc(desc), 'END:VEVENT');
+    });
+  });
+  L.push('END:VCALENDAR');
+  return { text: L.join('\r\n'), count };
+}
+function exportCalendar(){
+  const { text, count } = calendarFor(me);
+  if (!count) return toast('No upcoming dates for ' + me);
+  const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = (state.title || 'Panto').replace(/[^A-Za-z0-9]+/g, '-') + '-' + me.replace(/[^A-Za-z0-9]+/g, '-') + '.ics';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(count + ' dates exported – open the file to add them');
+}
 function renderSchedule(){
   const cov = coverage(), R = state.settings.minReps;
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
@@ -470,6 +516,7 @@ function renderSchedule(){
   if (live && !docExists && canEdit) h += '<p class="note">Publishing the new schedule…</p>';
   const people = allActors(state); if (me && !people.includes(me)) me = '';
   h += '<div class="card mebar"><div class="cb" style="padding-top:10px"><div class="bar" style="margin:0"><b>Me:</b><select id="me-sel"><option value="">Everyone</option>' + people.map(a => '<option'+(a===me?' selected':'')+'>'+esc(a)+'</option>').join('') + '</select>' + (me ? '<label style="display:flex;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="me-only"'+(onlyMine?' checked':'')+' style="width:20px;height:20px"> Only show when I\'m needed</label>' : '') + '</div>';
+  if (me) h += '<div class="bar" style="margin:8px 0 0"><button class="btn small primary" id="cal">📅 Add my dates to calendar</button></div>';
   if (me) { const all = state.nights.filter(n => n.type !== 'cancelled'); const mine = all.filter(n => nightInfo(n).called.includes(me) && !effAway(n).includes(me)); h += '<p class="note" style="margin:8px 0 0">'+esc(me)+' is needed on <b>'+mine.length+'</b> of '+all.length+' dates.</p>'; }
   h += '</div></div>';
   if (!(me && onlyMine)) h += '<p class="note" style="margin:0 0 4px">Times each scene is rehearsed with its full cast (+ with read-ins):</p><div class="cov">' + state.scenes.map(s => '<span class="'+(cov[s.id].full < R ? 'low':'')+'">'+esc(s.name.replace('Act ','A').replace(' Scene ',' Sc ').replace('Prologue + ',''))+' ×'+cov[s.id].full+(cov[s.id].part ? ' (+'+cov[s.id].part+')' : '')+'</span>').join('') + '</div>';
@@ -633,6 +680,7 @@ document.addEventListener('click', e => {
   if (d.t) { tab = d.t; render(); return; }
   if (b.id === 'pw-go') return signIn();
   if (b.id === 'pw-out') { firebase.auth().signOut(); openPanel = null; return; }
+  if (b.id === 'cal') return exportCalendar();
   if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
   if (!canEdit) return;
   if (b.id === 'replan' || b.id === 'replan2') return replan();
