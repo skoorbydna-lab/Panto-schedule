@@ -442,6 +442,26 @@ function replan(){
   save(); render(); toast(changed ? 'Schedule re-planned – ' + changed + ' night' + (changed === 1 ? '' : 's') + ' changed' : 'Re-planned – nothing needed to change');
 }
 function prevScenes(n){ const lp = state.lastPlan; if (!lp) return null; const o = lp.nights.find(x => x.date === n.date); return o ? o.scenes : null; }
+function changesText(){
+  const lines = ['🎭 *' + (state.title || 'Puss in Boots') + ' – rehearsal schedule update*', ''];
+  let k = 0;
+  state.nights.forEach(n => {
+    const p = prevScenes(n); if (!p || p.join() === n.scenes.join() || n.date < today) return;
+    k++;
+    const info = nightInfo(n), aw = effAway(n);
+    const add = n.scenes.filter(id => !p.includes(id)).map(id => sceneById(id).name);
+    const rem = p.filter(id => !n.scenes.includes(id)).map(id => (sceneById(id) || {}).name).filter(Boolean);
+    lines.push('*' + fmtDate(n.date, true) + '*' + (whereWhen(n) ? ' – ' + whereWhen(n) : ''));
+    if (add.length) lines.push('➕ Added: ' + add.join(', '));
+    if (rem.length) lines.push('➖ Dropped: ' + rem.join(', '));
+    lines.push('Scenes now: ' + (info.items.map(it => it.s.name).join(', ') || 'to be confirmed'));
+    lines.push('Called: ' + (info.called.filter(a => !aw.includes(a)).join(', ') || 'nobody'));
+    lines.push('');
+  });
+  if (!k) return '';
+  lines.push('Full schedule: ' + location.href.split('#')[0]);
+  return lines.join('\n');
+}
 function undoPlan(){
   const lp = state.lastPlan; if (!lp) return;
   state.nights.forEach(n => { const o = lp.nights.find(x => x.date === n.date); if (o) { n.scenes = o.scenes.slice(); n.locked = o.locked; } });
@@ -557,7 +577,7 @@ function renderSchedule(){
   let h = canEdit ? '<div class="bar"><button class="btn primary" id="replan">⟳ Re-plan schedule</button><span class="note" style="font-size:12px;color:var(--muted)">Keeps 📌 pinned nights; refills the rest.</span></div>' : '';
   if (canEdit && state.lastPlan) {
     const nCh = state.nights.filter(n => { const p = prevScenes(n); return p && p.join() !== n.scenes.join(); }).length;
-    h += '<div class="card replanned"><div class="cb" style="padding-top:10px"><b>⟳ Re-planned '+new Date(state.lastPlan.at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b><p class="note" style="margin:4px 0 8px">'+nCh+' night'+(nCh===1?'':'s')+' changed – marked below. <span class="newtag">New</span> scenes were added; removed ones are listed under each night.</p><div class="bar" style="margin:0"><button class="btn small" id="undo">↶ Undo – go back</button><button class="btn small primary" id="keep">Keep changes</button></div></div></div>';
+    h += '<div class="card replanned"><div class="cb" style="padding-top:10px"><b>⟳ Re-planned '+new Date(state.lastPlan.at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b><p class="note" style="margin:4px 0 8px">'+nCh+' night'+(nCh===1?'':'s')+' changed – marked below. <span class="newtag">New</span> scenes were added; removed ones are listed under each night.</p><div class="bar" style="margin:0"><button class="btn small" id="undo">↶ Undo – go back</button><button class="btn small primary" id="keep">Keep changes</button></div>'+(changesText() ? '<div class="bar" style="margin:8px 0 0"><a class="btn small wa" href="https://api.whatsapp.com/send?text='+encodeURIComponent(changesText())+'" target="_blank" rel="noopener">Share changes to WhatsApp</a><button class="btn small" id="copych">Copy changes</button></div>' : '')+'</div></div>';
   }
   if (canEdit) {
     const ch = castChanges();
@@ -745,6 +765,7 @@ document.addEventListener('click', e => {
   if (b.id === 'cal') return exportCalendar();
   if (b.id === 'undo') return confirmBox('Go back to the schedule from before the last re-plan?', 'Undo', undoPlan);
   if (b.id === 'gotit') { storeSeen(); render(); toast('Thanks!'); return; }
+  if (b.id === 'copych') return copyText(changesText());
   if (b.id === 'keep') { state.lastPlan = null; save(); render(); toast('Changes kept'); return; }
   if (d.cant) { const n = state.nights[+d.cant]; return setCastAway(me, n.date, !effAway(n).includes(me)); }
   if (!canEdit) return;
